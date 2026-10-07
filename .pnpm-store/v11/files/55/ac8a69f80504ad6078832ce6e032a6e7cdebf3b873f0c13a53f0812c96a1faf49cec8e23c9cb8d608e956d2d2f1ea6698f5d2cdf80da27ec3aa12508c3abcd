@@ -1,0 +1,1 @@
+import{u as o}from"./shared/vue.adf39a67.mjs";import"node:path";import"unplugin";import"@elegant-router/core";import"node:fs/promises";import"node:fs";import"magicast";import"recast/parsers/typescript.js";import"prettier";import"consola";import"kolorist";import"magic-string";const p=o.webpack;export{p as default};

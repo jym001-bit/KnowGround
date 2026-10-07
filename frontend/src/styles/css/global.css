@@ -1,0 +1,55 @@
+@import './reset.css';
+@import './nprogress.css';
+@import './transition.css';
+
+:root {
+  --notice-background: #ffffff;
+  --notice-heading: #233c30;
+  --notice-text: #64776a;
+  --notice-accent: #167565;
+  --notice-border: #dce8de;
+  --notice-icon-background: #e7f3e9;
+}
+html.dark {
+  --notice-background: #233229;
+  --notice-heading: #edf5ed;
+  --notice-text: #b8cabc;
+  --notice-accent: #9cd7b3;
+  --notice-border: #3d5142;
+  --notice-icon-background: #334e3b;
+}
+.n-notification {
+  border: 1px solid var(--notice-border);
+  max-width: calc(100vw - 32px);
+}
+.n-notification .n-notification-main .n-notification-main__content {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.login-success-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--notice-border);
+  border-radius: 10px;
+  color: var(--notice-accent);
+  background: var(--notice-icon-background);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+html {
+  overflow-x: hidden;
+}
+
+body { font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+button, input, textarea { font: inherit; }
+
+body { font-size: 16px; }

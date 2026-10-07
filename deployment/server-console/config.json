@@ -1,0 +1,17 @@
+{
+  "stateDir": "/var/lib/server-console",
+  "socket": "/run/server-console/http.sock",
+  "socketGroup": "caddy",
+  "origin": "https://jym-debug.duckdns.org",
+  "user": "admin",
+  "cookieName": "authelia_session",
+  "unitPrefix": "sc-task",
+  "piUnit": "server-console.service",
+  "healthUrl": "http://127.0.0.1:9091/authelia/api/health",
+  "healthHost": "localhost",
+  "healthTimeout": 30,
+  "memoryMax": "512M",
+  "cpuQuota": "50%",
+  "allowPowerActions": false,
+  "services": ["caddy.service", "docker.service", "server-console.service"]
+}

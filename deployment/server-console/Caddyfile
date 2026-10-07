@@ -1,0 +1,64 @@
+jym-debug.duckdns.org {
+    encode zstd gzip
+
+    @authelia path /authelia /authelia/*
+    handle @authelia {
+        reverse_proxy 127.0.0.1:9091
+    }
+
+    handle /server/monitor/* {
+        route {
+            request_header -Remote-User
+            request_header -Remote-Email
+            request_header -X-Beszel-Identity
+            request_header -Authorization
+            forward_auth 127.0.0.1:9091 {
+                uri /api/authz/forward-auth?authelia_url=https://jym-debug.duckdns.org/authelia/
+                copy_headers Remote-User Remote-Email
+            }
+            @anonymous not header Remote-User *
+            respond @anonymous "Forbidden" 403
+            @foreign_origin {
+                header Origin *
+                not header Origin https://jym-debug.duckdns.org
+            }
+            respond @foreign_origin "Forbidden" 403
+            uri strip_prefix /server/monitor
+            header X-Frame-Options SAMEORIGIN
+            reverse_proxy 127.0.0.1:8090 {
+                header_up -Cookie
+                header_up -Authorization
+                header_up X-Beszel-Identity {http.request.header.Remote-Email}
+                header_down -X-Frame-Options
+                header_down Content-Security-Policy "(?i)frame-ancestors[[:space:]]+[^;]*(;|$)" "frame-ancestors 'self';"
+            }
+        }
+    }
+
+    handle /server/* {
+        route {
+            request_header -Remote-User
+            request_header -Remote-Email
+            forward_auth 127.0.0.1:9091 {
+                uri /api/authz/forward-auth?authelia_url=https://jym-debug.duckdns.org/authelia/
+                copy_headers Remote-User Remote-Email
+            }
+            @anonymous not header Remote-User *
+            respond @anonymous "Forbidden" 403
+            @foreign_origin {
+                header Origin *
+                not header Origin https://jym-debug.duckdns.org
+            }
+            respond @foreign_origin "Forbidden" 403
+            reverse_proxy unix//run/server-console/http.sock
+        }
+    }
+
+    handle / {
+        redir /server/ 302
+    }
+
+    handle {
+        respond "Not Found" 404
+    }
+}

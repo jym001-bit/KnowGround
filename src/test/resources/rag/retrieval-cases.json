@@ -1,0 +1,56 @@
+{
+  "topK": 3,
+  "minRecallAt1": 0.60,
+  "minRecallAtK": 0.80,
+  "minPrecisionAtK": 0.30,
+  "minMrr": 0.70,
+  "maxFalsePositiveRate": 0.25,
+  "maxP95LatencyMs": 15000,
+  "positiveCases": [
+    {
+      "id": "RET-01",
+      "question": "知识库项目上传1GB文件时，每个分片设置为多大？",
+      "expectedFileNames": ["面经.pdf"],
+      "expectedFileMd5s": [],
+      "answerKeywordsAny": ["5MB", "5 MB", "5mb"]
+    },
+    {
+      "id": "RET-02",
+      "question": "Kafka消息如何保证不丢失、不重复？",
+      "expectedFileNames": ["面经.pdf"],
+      "expectedFileMd5s": [],
+      "answerKeywordsAny": ["Kafka", "kafka"]
+    },
+    {
+      "id": "RET-03",
+      "question": "MySQL不停机扩容的第一个阶段怎么做？",
+      "expectedFileNames": ["面渣逆袭MySQL篇V2.2.pdf"],
+      "expectedFileMd5s": [],
+      "answerKeywordsAny": ["新旧库", "旧库", "扩容"]
+    },
+    {
+      "id": "RET-04",
+      "question": "Java有哪四种访问控制权限？",
+      "expectedFileNames": ["面渣逆袭Java基础篇V2.1.pdf"],
+      "expectedFileMd5s": [],
+      "answerKeywordsAny": ["private", "protected", "public"]
+    },
+    {
+      "id": "RET-05",
+      "question": "MySQL为什么使用B+树作为索引结构？",
+      "expectedFileNames": ["面渣逆袭MySQL篇V2.2.pdf"],
+      "expectedFileMd5s": [],
+      "answerKeywordsAny": ["B+树", "索引"]
+    }
+  ],
+  "negativeCases": [
+    {
+      "id": "NEG-01",
+      "question": "ZHIJU_EVAL_7F4A9C型号的量子海豚发动机保修几年？"
+    },
+    {
+      "id": "NEG-02",
+      "question": "ZHIJU_EVAL_8B2D1E火星咖啡机的蓝色按钮电压是多少？"
+    }
+  ]
+}
