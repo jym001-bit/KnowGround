@@ -1,447 +1,254 @@
-派聪明（PaiSmart）是一个企业级的 AI 知识库管理系统，采用检索增强生成（RAG）技术，提供智能文档处理和检索能力。
+# 知据 · KnowGround
 
-核心技术栈包括 ElasticSearch、Kafka、WebSocket、Spring Security、Docker、MySQL 和 Redis。
+![知据项目图标](frontend/public/favicon.svg)
 
-它的目标是帮助企业和个人更高效地管理和利用知识库中的信息，支持多租户架构，允许用户通过自然语言查询知识库，并获得基于自身文档的 AI 生成响应。
+知据是我在 PaiSmart 代码基础上学习和开发的 RAG 知识库项目。它把文档上传、解析、检索和对话串起来，让回答可以回溯到文档来源。仓库仍保留部分 `PaiSmart` / `smartpai` 命名，应用和云端部署也仍在完善；本文描述当前代码与已验证的运行状态。
 
-![派聪明多模块架构](https://cdn.tobebetterjavaer.com/stutymore/README-20250730102133.png)
+![本地开发环境中的知据登录页](docs/images/login.png)
 
-系统允许用户：
+> 上图截自本地开发环境的 `/#/login`，不含账号和业务数据。云服务器上的管理面板与知据应用是两个独立系统；目前上线的是管理面板，知据应用尚未完成迁移。
 
-- 上传和管理各种类型的文档
-- 自动处理和索引文档内容
-- 使用自然语言查询知识库
-- 接收基于自身文档的 AI 生成响应
+## 导航
 
-用到的技术栈包括，先说后端的：
+- [功能与页面](#功能与页面)
+- [系统架构](#系统架构)
+- [技术栈](#技术栈)
+- [本地开发](#本地开发)
+- [项目结构](#项目结构)
+- [云端部署与数据迁移](#云端部署与数据迁移)
+- [验证与排障](#验证与排障)
+- [项目来源](#项目来源)
 
-+ 框架 : Spring Boot 3.4.2 (Java 17)
-+ 数据库 : MySQL 8.0
-+ ORM : Spring Data JPA
-+ 缓存 : Redis
-+ 搜索引擎 : Elasticsearch 8.10.0
-+ 消息队列 : Apache Kafka
-+ 文件存储 : MinIO
-+ 文档解析 : Apache Tika
-+ 安全认证 : Spring Security + JWT
-+ AI集成 : DeepSeek API/本地 Ollama+豆包 Embedding
-+ 实时通信 : WebSocket
-+ 依赖管理 : Maven
-+ 响应式编程 : WebFlux
+## 功能与页面
 
-后端的整体项目结构：
+| 功能 | 当前代码中的实现 | 主要入口 |
+| --- | --- | --- |
+| 登录与权限 | Spring Security、JWT；注册模式支持开放、邀请码和关闭 | `AuthController`、`UserController`、登录页 |
+| 知识库 | 上传、文档管理、解析、分块、向量化和访问权限控制 | `UploadController`、`DocumentController`、知识库页 |
+| 检索问答 | 混合检索后调用模型生成回答，传递引用映射 | `HybridSearchService`、`ChatHandler`、聊天页 |
+| 对话历史 | 会话、消息和引用信息写入 MySQL | `ConversationService`、聊天历史页 |
+| 组织与管理 | 组织标签、用户、邀请码、模型提供方、额度与用量页面 | 管理相关控制器及 `frontend/src/views/` |
 
-```bash
-src/main/java/com/yizhaoqi/smartpai/
-├── SmartPaiApplication.java      # 主应用程序入口
-├── client/                       # 外部API客户端
-├── config/                       # 配置类
-├── consumer/                     # Kafka消费者
-├── controller/                   # REST API端点
-├── entity/                       # 数据实体
-├── exception/                    # 自定义异常
-├── handler/                      # WebSocket处理器
-├── model/                        # 领域模型
-├── repository/                   # 数据访问层
-├── service/                      # 业务逻辑
-└── utils/                        # 工具类
+这些功能能否完整使用，取决于数据库、队列、对象存储、检索服务和模型 API 是否配置正确。页面或类存在不等于整条业务链路已通过测试。
+
+## 系统架构
+
+### 服务关系
+
+```mermaid
+flowchart LR
+    U[浏览器] --> F[Vue 3 前端]
+    F -->|HTTP / WebSocket| B[Spring Boot 后端]
+    B --> M[(MySQL<br/>用户、文档元数据、聊天历史)]
+    B --> R[(Redis<br/>短期状态与上下文)]
+    B --> K[Kafka<br/>文件处理任务]
+    B --> O[(MinIO<br/>原始文件)]
+    B --> E[(Elasticsearch<br/>文本与向量索引)]
+    B --> D[DeepSeek API<br/>生成回答]
+    B --> A[Embedding API<br/>生成向量]
+    K --> W[后端消费者]
+    W --> O
+    W --> E
+    W --> A
 ```
 
-再说前端的，包括：
+### 上传与提问的两条链路
 
-+ 框架 : Vue 3 + TypeScript
-+ 构建工具 : Vite
-+ UI组件 : Naive UI
-+ 状态管理 : Pinia
-+ 路由 : Vue Router
-+ 样式 : UnoCSS + SCSS
-+ 图标 : Iconify
-+ 包管理 : pnpm
+```mermaid
+flowchart TD
+    UP[上传文件] --> STORE[MinIO 保存原文件]
+    STORE --> QUEUE[Kafka 异步任务]
+    QUEUE --> PARSE[解析、分块]
+    PARSE --> EMB[Embedding 向量化]
+    EMB --> INDEX[Elasticsearch 建索引]
 
-前端的整体项目结构：
-
-```bash
-frontend/
-├── packages/           # 可重用模块
-├── public/             # 静态资源
-├── src/                # 主应用程序代码
-│   ├── assets/         # SVG图标，图片
-│   ├── components/     # Vue组件
-│   ├── layouts/        # 页面布局
-│   ├── router/         # 路由配置
-│   ├── service/        # API集成
-│   ├── store/          # 状态管理
-│   ├── views/          # 页面组件
-│   └── ...            # 其他工具和配置
-└── ...               # 构建配置文件
+    Q[用户提问] --> ACL[按用户与组织权限检索]
+    ACL --> RETRIEVE[取回相关知识片段]
+    RETRIEVE --> LLM[DeepSeek 生成回答]
+    LLM --> REF[返回来源与引用预览]
+    REF --> HISTORY[MySQL 保存会话]
 ```
 
-## 派聪明的成绩
+**数据分工：**MySQL 保存需要长期保留的业务数据和聊天历史；MinIO 保存文件；Elasticsearch 保存可检索索引；Redis 用于短期状态，不应当作聊天历史的唯一存储。Kafka 承接异步任务，迁移前要确认待处理消息已消费完。
 
-派聪明是 9 月份上线的，截止到目前，已经取得了非常瞩目的成绩，我这里晒一下哈。
+## 技术栈
 
+| 分类 | 版本或组件 | 在项目中的作用 | 配置/代码依据 |
+| --- | --- | --- | --- |
+| 后端 | Java 17、Spring Boot 3.4.2、Maven | API、业务逻辑和 WebSocket | [`pom.xml`](pom.xml) |
+| 前端 | Vue 3、TypeScript、Vite 6、Naive UI、Pinia、Vue Router、UnoCSS、pnpm | 页面与状态管理 | [`frontend/package.json`](frontend/package.json) |
+| 数据库 | MySQL 8、Spring Data JPA | 用户、文档元数据、会话与记录 | [`application.yml`](src/main/resources/application.yml) |
+| 缓存/消息 | Redis、Spring Kafka、Apache Kafka | 短期生成状态与异步文件处理 | 后端配置和消费者代码 |
+| 搜索/文件 | Elasticsearch 8.10.x、MinIO | 混合检索、向量索引与原文件 | [`docs/docker-compose.yaml`](docs/docker-compose.yaml) |
+| 文档解析 | Apache Tika、PDF 处理代码、LiteParse `lit` | 文本提取和 PDF 解析 | `DocumentService`、`ParseService` |
+| AI | DeepSeek API、DashScope Embedding API | 回答生成与向量化 | `DeepSeekClient`、`EmbeddingClient` |
+| 安全 | Spring Security、JWT | 身份认证与访问控制 | `SecurityConfig` |
 
-![面渣逆袭+派聪明 拿下招银网络+科大讯飞](https://cdn.tobebetterjavaer.com/paicoding/fb5db62ab92092e2d74a4916b6a45710.png)
+部署镜像版本可能和 Maven 客户端依赖版本不同；以部署文件中实际镜像为准。Beszel 是独立的服务器监控软件，不参与 RAG 问答。
 
+## 本地开发
 
-![派聪明拿到的日常实习](https://cdn.tobebetterjavaer.com/paicoding/da01a535b091c5ebeed70bf9a08a90c6.png)
+### 环境要求
 
+| 工具/服务 | 建议版本或说明 |
+| --- | --- |
+| JDK | 17 |
+| Maven | 3.8.6 或更新 |
+| Node.js / pnpm | Node.js 18.20+、pnpm 8.7+ |
+| MySQL / Redis / Kafka / Elasticsearch / MinIO | 配置可用的本机或开发实例；Elasticsearch 示例镜像为 8.10.4 |
+| 模型服务 | 有效的 DeepSeek 与 Embedding API Key；没有 Key 时无法验证完整问答链路 |
+| PDF 解析 | 使用该功能时需让后端能执行 LiteParse 的 `lit` 命令 |
 
-![派聪明拿下合合信息](https://cdn.tobebetterjavaer.com/paicoding/3518a76f439c325de8df763482cbebc4.png)
+### 1. 准备基础设施
 
+先确认 MySQL、Redis、Kafka、MinIO 和 Elasticsearch 可以从后端所在机器访问。仓库中的 [`docs/docker-compose.yaml`](docs/docker-compose.yaml) 是原有基础设施示例，带固定密码、对外映射端口和宿主机路径，**不能原样用于公网服务器**。本地使用也应先检查其端口、凭据、数据卷和 Elasticsearch 内存占用。
 
-![派聪明拿下小红书](https://cdn.tobebetterjavaer.com/paicoding/7bed4d34460749d68db9c0fcbc4621a8.png)
+数据库名由 `SPRING_DATASOURCE_URL` 决定；示例文件中的库名和你本机现有库名可能不同，启动前保持一致。`docs/databases/ddl.sql` 可供查看原有表结构，但实际建表策略仍以当前 JPA 配置和迁移后的数据库状态为准。
 
+### 2. 配置后端
 
-![派聪明拿下网易](https://cdn.tobebetterjavaer.com/paicoding/5f227edcb38ffe41aea8fc0880f64cad.png)
+从 [`.env.example`](.env.example) 复制一份为仓库根目录 `.env`。Windows PowerShell 可以执行：
 
-说句真心话，看到这，就可以无脑冲这个项目了，因为这些，还只是冰山一角。扫下面的优惠券（或者长按自动识别）解锁派聪明源码和教程吧，[星球](https://javabetter.cn/zhishixingqiu/)目前定价 159 元/年，优惠完只需要 129 元，每天不到 0.35 元，绝对的超值。
-
-![派聪明优惠券](https://cdn.tobebetterjavaer.com/paicoding/97601d7a337d7d944b02bb4a79cd6430.png)
-
->派聪明如何写到简历上：[https://paicoding.com/column/10/2](https://paicoding.com/column/10/2)
-
-
-
-## 核心功能
-
-这里我先带大家了解一下什么是派聪明，我为什么要做派聪明这个企业级的 RAG 知识库？派聪明这个 AI 项目能让大家学到什么？以及如何解锁派聪明的源码仓库和教程？
-
-![派聪明的聊天助手：会依据知识库进行问答](https://cdn.tobebetterjavaer.com/paicoding/2550c873a349d8bee29d46400f12ce76.png)
-
-![派聪明的架构概览](https://cdn.tobebetterjavaer.com/stutymore/README-20250730101618.png)
-
-### 知识库管理
-
-派聪明提供了完整的文档上传与解析功能，支持文件分片上传和断点续传，并支持标签进行组织管理。文档可以是公开的，也可以是私有的，并且可以与特定的组织标签关联，以便更好地进行权限分类。
-
-![派聪明文档处理](https://cdn.tobebetterjavaer.com/stutymore/README-20250730102808.png)
-
-### AI驱动的RAG实现
-
-派聪明的核心是 RAG 实现：
-
-![派聪明聊天交互](https://cdn.tobebetterjavaer.com/stutymore/README-20250730102837.png)
-
-- 将上传的文档进行语义分块
-- 调用豆包 Embedding 模型为每个文本块生成高维向量
-- 将向量存储到 ElasticSearch 以支持语义搜索和关键词搜索
-- 可以根据用户的查询检索相关文档
-- 为 LLM 提供完整的上下文，从而生成更准确、基于文档的响应内容
-
-### 企业级多租户
-
-派聪明通过组织标签支持多租户架构。每个用户可以创建或加入一个或多个组织，每个组织可以拥有独立的知识库和文档管理。这样，企业可以在同一系统中管理多个团队或部门的知识库，而无需担心数据混淆或权限问题。
-
-![派聪明的安全架构](https://cdn.tobebetterjavaer.com/stutymore/README-20250730103118.png)
-
-### 实时通信
-
-系统采用 WebSocket 技术，提供用户与 AI 系统之间的实时交互，支持响应式聊天界面，便于知识检索和 AI 互动。
-
-## 前置环境
-
-在开始之前，请确保已安装以下软件：
-
-- Java 17
-- Maven 3.8.6 或更高版本
-- Node.js 18.20.0 或更高版本
-- pnpm 8.7.0 或更高版本
-- MySQL 8.0
-- Elasticsearch 8.10.0
-- MinIO 8.5.12
-- Kafka 3.2.1
-- Redis 7.0.11
-- Docker（可选，用于运行 Redis、MinIO、Elasticsearch 和 Kafka 等服务）
-
-## 架构设计
-
-派聪明的架构具备一个现代化的、云原生应用程序的特点，具有清晰的关注点分离、可扩展的组件和与 AI 技术的集成。模块化设计允许随着技术的发展，特别是快速变化的 AI 集成领域，未来可以扩展和替换单个组件。
-
-![派聪明的系统概述](https://cdn.tobebetterjavaer.com/stutymore/README-20250730102655.png)
-
-控制层用于处理 HTTP 请求，验证输入，管理请求/响应格式化，并将业务逻辑委托给服务层。控制器按领域功能组织。遵循 RESTful 设计原则，集成了性能监控和日志记录，用于跟踪 API 使用和故障排除。
-
-```java
-@RestController
-@RequestMapping("/api/v1/documents")
-public class DocumentController {
-    @Autowired
-    private DocumentService documentService;
-    
-    @DeleteMapping("/{fileMd5}")
-    public ResponseEntity<?> deleteDocument(
-            @PathVariable String fileMd5,
-            @RequestAttribute("userId") String userId,
-            @RequestAttribute("role") String role) {
-        // 参数验证和委托给服务
-        documentService.deleteDocument(fileMd5);
-        // 响应处理
-    }
-}
+```powershell
+Copy-Item .env.example .env
 ```
 
-服务层主要用来处理应用的业务逻辑，具有事务感知能力，能够处理跨越多个数据源的操作。
-
-```java
-@Service
-public class DocumentService {
-    @Autowired
-    private FileUploadRepository fileUploadRepository;
-    
-    @Autowired
-    private MinioClient minioClient;
-    
-    @Autowired
-    private ElasticsearchService elasticsearchService;
-    
-    @Transactional
-    public void deleteDocument(String fileMd5) {
-        // 文档删除的业务逻辑
-        // 协调多个仓储和系统
-    }
-}
-```
-
-数据访问层使用 Spring Data JPA 进行数据库操作，提供了对 MySQL 的 CRUD 操作。
-
-```java
-@Repository
-public interface FileUploadRepository extends JpaRepository<FileUpload, Long> {
-    Optional<FileUpload> findByFileMd5(String fileMd5);
-    
-    @Query("SELECT f FROM FileUpload f WHERE f.userId = :userId OR f.isPublic = true OR (f.orgTag IN :orgTagList AND f.isPublic = false)")
-    List<FileUpload> findAccessibleFilesWithTags(@Param("userId") String userId, @Param("orgTagList") List<String> orgTagList);
-}
-```
-
-实体层由映射到数据库表的 JPA 实体以及用于 API 请求和响应的 DTO（数据传输对象）组成。
-
-```java
-@Entity
-public class FileUpload {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    
-    private String fileMd5;
-    private String fileName;
-    private String userId;
-    private boolean isPublic;
-    private String orgTag;
-    // 其他字段和方法
-}
-```
-
-## 环境变量与新的启动方式
-
-现在本地开发建议按“准备 `.env` -> 启基础服务 -> 启后端 -> 启前端”的顺序启动，不再需要把一堆环境变量手动 export 到终端。
-
-### 1. 准备项目根目录 `.env`
-
-项目根目录的 `.env` 用于保存后端本地运行和部署相关配置。首次使用时先复制模板：
+Linux/macOS 可以执行：
 
 ```bash
 cp .env.example .env
 ```
 
-后端启动时会通过 `DotenvEnvironmentPostProcessor` 自动读取项目根目录 `.env`，所以无论是 IDE 直接运行 `SmartPaiApplication`，还是在项目根目录执行 `mvn spring-boot:run`，都会优先使用这里的配置。
+仓库中的 `DotenvEnvironmentPostProcessor` 会在从项目根目录启动后端时读取 `.env`。真实 `.env` 已被 `.gitignore` 排除，不能提交到仓库或发到聊天里。重点填写：
 
-`.env` 里当前主要有三类配置：
+| 配置项 | 用途 | 常见问题 |
+| --- | --- | --- |
+| `SPRING_PROFILES_ACTIVE` | 本地通常为 `dev` | 选错 profile 会读到不同默认值 |
+| `SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD` | MySQL 连接 | 库名、账号或权限不匹配 |
+| `SPRING_DATA_REDIS_HOST`、`SPRING_KAFKA_BOOTSTRAP_SERVERS` | Redis 与 Kafka | 服务在虚拟机时不要误填 `localhost` |
+| `MINIO_ENDPOINT`、`MINIO_PUBLIC_URL`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY` | 原文件与下载地址 | 内外地址不一致可能影响签名 URL |
+| `ELASTICSEARCH_HOST`、`ELASTICSEARCH_SCHEME`、`ELASTICSEARCH_PASSWORD` | 检索连接 | HTTP/HTTPS 和证书配置不一致 |
+| `JWT_SECRET_KEY` | JWT 签名 | 必须提供有效的 Base64 密钥 |
+| `DEEPSEEK_API_KEY`、`EMBEDDING_API_KEY` | 模型调用 | 额度、模型名、向量维度需匹配 |
+| `FILE_PARSING_LITEPARSE_COMMAND` | PDF 解析命令 | 后端进程找不到 `lit` |
 
-- 应用运行配置：MySQL、Redis、Kafka、MinIO、Elasticsearch、JWT、AI Provider 等
-- 初始化与安全配置：如 `ADMIN_BOOTSTRAP_*`、`APP_AUTH_REGISTRATION_MODE`、`SECURITY_ALLOWED_ORIGINS`
-- 前端部署配置：如 `DEPLOY_SERVER_HOST`、`DEPLOY_SERVER_USER`、`DEPLOY_SERVER_KEY`、`DEPLOY_TARGET_DIR`、`DEPLOY_HEALTHCHECK_URL`
+前端使用 [`frontend/.env.test`](frontend/.env.test) 和 [`frontend/.env.prod`](frontend/.env.prod) 分别配置开发/生产接口地址。`pnpm dev` 走 `test` 模式，默认连接 `http://localhost:8081/api/v1`。
 
-几个关键项建议优先确认：
+### 3. 启动项目
 
-- `SPRING_PROFILES_ACTIVE=dev`：本地源码启动默认使用 `dev`
-- `SPRING_DATASOURCE_*`、`SPRING_DATA_REDIS_*`：数据库和 Redis 连接
-- `SPRING_KAFKA_BOOTSTRAP_SERVERS`、`MINIO_*`、`ELASTICSEARCH_*`：基础依赖地址
-- `JWT_SECRET_KEY`：必须是 Base64 字符串，可用 `openssl rand -base64 32` 生成
-- `ADMIN_BOOTSTRAP_ENABLED`：仅首次创建管理员时临时改为 `true`，创建完成后改回 `false`
-
-说明：
-
-- `.env` 是后端和部署脚本共用的根配置
-- 前端自己的 Vite 变量仍放在 `frontend/.env`、`frontend/.env.test`、`frontend/.env.prod`
-- `pnpm run dev` 实际使用的是 `vite --mode test`，默认会读取 `frontend/.env.test`
-
-### 2. 启动本地基础服务
-
-`infra.sh` 是现在推荐的本地基础设施启动入口，用来统一管理 `minio`、`kafka`、`elasticsearch`。
-
-### `infra.sh`
-
-用于在本机启动、停止和查看基础依赖服务，目前支持 `minio`、`kafka`、`elasticsearch`。
-
-```bash
-# 启动全部基础服务
-./infra.sh start
-
-# 启动指定服务
-./infra.sh start minio kafka
-
-# 查看状态
-./infra.sh status
-
-# 查看某个服务日志
-./infra.sh logs elasticsearch
-
-# 输出本地访问地址
-./infra.sh urls
-```
-
-如果只想启动部分依赖，也可以按服务名传参：
-
-```bash
-./infra.sh start minio kafka
-```
-
-### 3. 启动后端
-
-基础服务就绪后，在项目根目录启动 Spring Boot：
+后端通常由 IDE 直接运行；也可在仓库根目录运行：
 
 ```bash
 mvn spring-boot:run
 ```
 
-也可以直接在 IDE 中运行 `src/main/java/com/yizhaoqi/smartpai/SmartPaiApplication.java`，效果一样，都会自动读取根目录 `.env`。
-
-### 4. 启动前端
+另开终端运行前端：
 
 ```bash
 cd frontend
 pnpm install
-pnpm run dev
+pnpm dev
 ```
 
-前端开发默认访问 `http://localhost:8081/api/v1`，对应配置在 `frontend/.env.test`。
+| 地址 | 作用 |
+| --- | --- |
+| `http://localhost:9527/#/login` | 本地前端登录页 |
+| `http://localhost:9527/#/chat` | 聊天页，需登录 |
+| `http://localhost:9527/#/knowledge-base` | 知识库页，需登录 |
+| `http://localhost:8081/api/v1` | 后端 API 前缀 |
 
-### 5. 服务器脚本启动
+登录后先做一次小文档上传与提问，验证 Kafka、MinIO、Embedding、Elasticsearch 和模型调用是否都通。只看到登录页不能说明 RAG 链路已正常。
 
-如果是服务器上用 jar 包方式运行，可以参考根目录的 `launch.sh.example`。建议先复制成你自己的启动脚本，再按需调整 JDK、Maven 和 jar 名称。脚本支持先加载指定 `.env`，再执行 `start`、`restart`、`stop`、`status`、`logs` 等命令。
+### 日常开发命令
 
 ```bash
-cp launch.sh.example launch.sh
-chmod +x launch.sh
+# 修改 Java 后优先编译，让已有的 IDE 热部署加载最新代码
+mvn -q -DskipTests compile
 
-# 使用默认 .env 启动
-./launch.sh start
+# 需要验证后端行为时
+mvn test
 
-# 使用指定环境文件启动
-./launch.sh start -e .env.prod
+# 在 frontend 目录中执行
+pnpm typecheck
+pnpm build
 ```
 
-其中：
+本地开发时后端通常由 IDE 管理，不要仅为验证一处代码修改就先重启。前端开发服务器已运行时直接访问 `http://localhost:9527`。
 
-- `start`：会先 `git pull`，再重新打包并启动
-- `restart`：直接重启现有 jar
-- `status` / `logs`：查看进程状态和日志
+## 项目结构
 
-### 6. 前端部署脚本
-
-`deploy-front.sh` 用于构建前端、打 zip 包、上传到服务器，并在远端替换 `/home/www/PaiSmart-Front/dist`。脚本会自动读取根目录 `.env` 中的部署配置。
-
-```bash
-# 直接构建并部署前端
-./deploy-front.sh
+```text
+KnowGround/
+├── src/main/java/com/yizhaoqi/smartpai/  # 后端控制器、服务、消费者与模型客户端
+├── src/main/resources/                 # application*.yml 与静态资源
+├── frontend/src/views/                 # 聊天、历史、知识库和管理页面
+├── frontend/packages/                  # 前端工作区模块
+├── docs/                               # 数据库脚本和开发/部署记录
+├── deployment/server-console/          # 已部署的独立 VPS 管理面板资料
+├── .env.example                        # 本地配置样例
+├── .env.cloud.example                  # 云端配置样例，尚需部署适配
+├── pom.xml                              # Maven 依赖
+└── README.md
 ```
 
-部署脚本默认会执行这些步骤：
+| 配置文件 | 用途 |
+| --- | --- |
+| [`application.yml`](src/main/resources/application.yml) | 通用配置与知据应用的回答规则 |
+| [`application-dev.yml`](src/main/resources/application-dev.yml) | 本地开发参数 |
+| [`application-docker.yml`](src/main/resources/application-docker.yml) | 容器环境参数 |
+| [`application-prod.yml`](src/main/resources/application-prod.yml) | 生产环境覆盖参数 |
+| [`AGENTS.md`](AGENTS.md) | 本仓库内 Codex 的工作约定；不属于应用的系统提示词 |
 
-- 进入 `frontend` 执行 `pnpm build`
-- 打包 `dist` 为 zip 文件并上传到服务器
-- 删除远端旧的 `dist` 目录并解压新包
-- 检查远端 `dist/index.html` 是否存在
-- 请求 `DEPLOY_HEALTHCHECK_URL` 做健康检查
+## 云端部署与数据迁移
 
-如果只想复用已有的前端构建产物，可以在执行时跳过构建：
+### 当前状态
 
-```bash
-DEPLOY_SKIP_BUILD=1 ./deploy-front.sh
-```
+| 项目 | 状态 |
+| --- | --- |
+| Ubuntu VPS、SSH、Docker、Docker Compose、HTTPS | 已准备 |
+| 独立服务器管理面板与 Beszel 监控 | 已部署，见 [面板说明](deployment/server-console/README.md) |
+| 知据应用的云端 Compose、前后端镜像 | **待完成** |
+| MySQL、MinIO、Elasticsearch 的业务数据复制 | **待完成** |
+| 云端登录、上传、问答、引用与历史的端到端验证 | **待完成** |
 
-## 八、解锁派聪明源码+教程
+因此当前**没有一条可以直接运行并完成知据上线的 `docker compose up` 命令**。现有 [`docs/docker-compose.yaml`](docs/docker-compose.yaml) 主要是开发基础设施示例：密码写死、数据库端口暴露、Kafka 广播 `localhost`、Elasticsearch 使用 2 GB 堆。2 核 4 GB VPS 需要独立的云端 Compose、内存限制和安全配置。详情见 [云端部署准备记录](docs/cloud-deployment-plan.md)。
 
-那这次为了避免盗版，这次的代码仓库采用的是邀请制，加入星球后，在星球第一个置顶帖【球友必看】中获取邀请链接，审核通过后即可查看。
+### 计划中的部署顺序
 
-![派聪明的源码申请](https://cdn.tobebetterjavaer.com/paicoding/0abd7b441b744b33d48277be776e58cc.png)
+1. **盘点数据**：确认本机 MySQL、MinIO 和 Elasticsearch 的数据量及可访问状态，确定要迁移的库、桶和索引。Redis 只保存短期状态，不能用它替代 MySQL 聊天历史。
+2. **做只读备份**：从本机导出 MySQL、复制 MinIO 对象；对 Elasticsearch 选择快照迁移或经验证的重建方式。保留本机原数据，并校验备份可读、大小和记录数。
+3. **制作云端专用配置**：使用 [`.env.cloud.example`](.env.cloud.example) 填写独立的云端凭据；容器间使用服务名通信，数据库和中间件端口只在内网开放。真实 `.env.cloud` 不入库。
+4. **构建镜像**：后端镜像包含 Java 运行环境及实际需要的 PDF 解析依赖；前端构建产物由 Web 服务提供。Elasticsearch 插件应与镜像版本匹配，避免每次启动临时下载。
+5. **恢复并启动**：先启动数据库和中间件并恢复数据，再启动后端、前端及 HTTPS 代理；检查容器健康、日志、接口和磁盘/内存使用。
+6. **验收与切换**：实测登录、上传 PDF、解析向量化、检索问答、引用预览和历史记录。确认云端与备份数据一致后再把访问入口切到云端。
 
-派聪明的教程，这次托管在技术派教程上，之前只要在技术派上绑定过星球的成员编号，均可以解锁查看。
+迁移采用**复制**：本机数据保留。云端只包含备份时间点的数据；切换前本机新增的数据需要再次同步。35 GB 磁盘和 4 GB 内存对全套服务较紧张，部署前要按实际数据量核算。
 
->派聪明教程地址：https://paicoding.com/column/10/1
+### 需要提前验证的部署细节
 
-![派聪明教程](https://cdn.tobebetterjavaer.com/paicoding/a157a62358a6b3c2dab478988143271a.png)
+| 风险点 | 为什么要验证 |
+| --- | --- |
+| MinIO 公网 URL 与签名下载 | 内网地址生成签名后直接替换域名可能造成下载 403 |
+| LiteParse `lit` | 容器中缺少命令会导致 PDF 解析失败 |
+| Elasticsearch IK 插件 | 插件版本必须与 ES 对应，启动时在线安装不稳定 |
+| `/api/v1/test/**` 和 `/api/v1/internal/ocr/**` | 目前安全配置允许访问，上线前需限制公网入口 |
+| 模型 API Key 与额度 | 云端应使用独立密钥并确认计费与限额 |
 
-并且了照顾大家的阅读习惯，我们也会在星球里第一时间同步。
+## 验证与排障
 
-![星球付费专栏](https://cdn.tobebetterjavaer.com/paicoding/d2c867d82d57ef1560fed6267eb02590.png)
+建议按“浏览器 → 后端 → 数据存储”逐层定位：
 
+| 现象 | 优先检查 |
+| --- | --- |
+| 前端打不开 | `9527` 开发端口、Vite 进程、浏览器控制台 |
+| 登录失败 | Network 中的响应、后端日志、MySQL 用户数据及 JWT 配置 |
+| 上传后一直不完成 | MinIO 对象、Kafka topic/消费者、解析任务日志 |
+| 聊天没有参考来源 | Elasticsearch 检索结果、权限过滤、引用映射与浏览器响应 |
+| 历史记录为空 | 浏览器请求/响应、后端会话服务、MySQL 记录；不要只看 Redis |
+| 云端网页正常但问答失败 | 容器健康、模型 API、Embedding API、ES、Kafka 和数据库连接 |
 
-加入[「二哥的编程星球」](https://javabetter.cn/zhishixingqiu/)后，你还可以享受以下专属内容服务：
+完整验收路径为“登录 → 上传 → 解析与向量化 → 检索问答 → 引用预览 → 历史记录”。前后端都要确认实际请求和持久化数据，不以页面能打开作为上线完成标准。
 
-- 1、**付费文档:** 派聪明 RAG、[微服务 PmHub](https://laigeoffer.cn/pmhub/learn/)、[前后端分离技术派](https://javabetter.cn/zhishixingqiu/paicoding.html)、轮子 MYDB、入门编程喵、AI+MCP 的校招派等项目配套的 60 万+ 字教程查看权限
-- 2、**简历修改**: 提供价值超 600 元的[简历修改服务](https://javabetter.cn/zhishixingqiu/jianli.html)，附赠星球 5000+优质简历模板可供参考
-- 3、**专属问答**: 向二哥和星球嘉宾发起 1v1 提问，内容不限于 offer 选择、学习路线、职业规划等
-- 4、**面试指南**: 获取针对校招、社招的 40 万+字面试求职攻略《[Java 面试指南](https://javabetter.cn/zhishixingqiu/mianshi.html)》，以及二哥的 LeetCode 刷题笔记、一灰的职场进阶之路、华为 OD 题库
-- 5、**学习环境:** 打造一个沉浸式的学习环境，有一种高考冲刺、大学考研的氛围
+## 项目来源
 
-截止到 2025 年 07 月 31 日，已经有 9000+ 球友加入星球了，很多小伙伴在认真学习项目之后，都成功拿到了心仪的校招或者社招 offer，我就随便举两个例子。
-
-![美团快手 TP-LINK 拼多多](https://cdn.tobebetterjavaer.com/stutymore/readme-20250703180225.png)
-
-![阿里云荣耀字节](https://cdn.tobebetterjavaer.com/stutymore/readme-20250703180738.png)
-
-
-目前，派聪明这个项目也收尾了，大家可以放心冲 😊。并且一次购买不需要额外付费，即可获取星球的所有付费资料，帮助你少走弯路，提高学习的效率。直接微信扫下面这个优惠券即可加入。
-
-![派聪明优惠券](https://cdn.tobebetterjavaer.com/paicoding/97601d7a337d7d944b02bb4a79cd6430.png)
-
-> 步骤 ①：微信扫描上方二维码，点击「加入知识星球」按钮
-
-> 步骤 ②：访问星球置顶帖球友必看：[https://t.zsxq.com/11rEo9Pdu](https://t.zsxq.com/11rEo9Pdu)，获取项目的源码和配套教程
-
-加入星球需要多少钱呢？星球目前定价 159 元，限时优惠 30 元，目前只需要 129 元就可以加入。
-
-0 人的时候优惠完 69 元，1000 人的时候 79 元，2000 人的时候 89 元，3000 人的时候 99 元，5000 人的时候是 119 元，后面肯定还会继续涨。
-
-付费社群我加入了很多，但从未见过比这更低价格，提供更多服务的社群，光派聪明这个项目的就能让你值回票价。
-
-多说一句，任何时候，技术都是我们程序员的安身立命之本，如果你能认认真真跟完派聪明的源码和教程，相信你的编程功底会提升一大截。
-
-再给大家展示一下派聪明教程的部分目录吧，真的是满满的诚意和干货。
-
-![派聪明整体设计方案](https://cdn.tobebetterjavaer.com/paicoding/6b670c22740e9e7b3dfae35fd646196e.png)
-
-![派聪明 prompt](https://cdn.tobebetterjavaer.com/paicoding/1e5e0055300a70a4cb83791f889bec20.png)
-
-![派聪明教程目录](https://cdn.tobebetterjavaer.com/stutymore/readme-20250106103555.png)
-
-
-之前就有球友反馈说，“**二哥，你这套教程如果让培训机构来卖，1999 元都算少！**
-
-讲真心话，这个价格也不会持续很久，星球已经 9000 人了，马上 10000 人会迎来一波新的涨价（169 元），所以早买早享受，不要等，想好了就去冲，错过不能说后悔一辈子，但至少会有遗憾。
-
-
-![球友们加入星球后的真实反馈](https://cdn.tobebetterjavaer.com/paicoding/0d2b52387576b0884e832c05594fc9de.png)
-
-我们的代码，严格按照大厂的标准来，无论是整体的架构，还是具体的细节，都是无可挑剔的学习对象。
-
-![派聪明的代码细节](https://cdn.tobebetterjavaer.com/paicoding/e946bb63f1fe5279888bb7f1fcb649b0.png)
-
-之前曾有球友问我：“二哥，你的星球怎么不定价 199、299、399 啊，我感觉星球提供的价值远超这个价格啊。”
-
-答案很明确，我有自己的原则，**拒绝割韭菜，用心做内容，能帮一个是一个**。
-
-![我愿意给大家最真诚的服务](https://cdn.tobebetterjavaer.com/paicoding/e946bb63f1fe5279888bb7f1fcb649b0.png)
-
-不为别的，为的就是给所有人提供一个可持续的学习环境。当然了，随着人数的增多，二哥付出的精力越来越多，星球也会涨价，今天这批 30 元的优惠券不仅 2025 年最大的优惠力度，也是 2026 年最大的优惠力度，现在入手就是最划算的，再犹豫就只能等着涨价了。
-
-想想，QQ 音乐听歌连续包年需要 **88 元**，腾讯视频连续包年需要 **178 元**，腾讯体育包年 **233 元**。我相信，二哥编程星球回馈给你的，将是 10 倍甚至百倍的价值。
-
-最后，希望小伙伴们，能紧跟我们的步伐！不要掉队。今年，和二哥一起翻身、一起逆袭、一起晋升、一起拿高薪 offer！
-
-那无论你是社招还是校招，我们都希望你通过派聪明这个项目，能提升自己的简历含金量，拿到更好的 offer，也能更加从容的应对面试中各种 AI 相关的考察。
-
-冲。
+知据在 PaiSmart 项目基础上继续学习和开发，保留了部分上游类名与目录结构。本 README 只描述本仓库的真实实现与状态，不引用原项目的商业推广、招聘成果或他人的截图。仓库根目录的 [`LICENSE`](LICENSE) 是 Apache License 2.0；前端依赖和其他第三方组件各自遵循其许可证。

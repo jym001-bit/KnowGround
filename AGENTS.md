@@ -1,203 +1,81 @@
-# AGENTS.md
+# AGENTS.md：知据项目协作约定
 
-This file is the agent-facing working agreement for the `PaiSmart` repository.
+本文件只约束在知据（KnowGround）仓库内工作的编码助手。知据是基于 RAG 的知识库项目，后端使用 Spring Boot，前端使用 Vue 3 + TypeScript；MySQL 保存业务数据，Redis 保存缓存、会话和短期对话上下文，Elasticsearch 用于检索，Kafka 用于异步文件处理，MinIO 用于对象存储。
 
-## Purpose
+## 沟通方式
 
-PaiSmart (派聪明) is an enterprise AI knowledge management system built around a RAG workflow:
+- 用户的问题可能不够完整。遇到会影响方案或结果的歧义时，提出简短的澄清问题，或给出几个具体选项；不要擅自猜测关键要求。
+- 等待回复时，继续完成不依赖该答案的工作。已确认的选择在后续对话中继续有效。
+- 本约定只适用于本仓库的 Codex 对话，不修改知据应用面向终端用户的系统提示词。
 
-- Spring Boot backend
-- Vue 3 + TypeScript frontend
-- MySQL for primary persistence
-- Redis for cache/session/short-lived chat context
-- Elasticsearch for retrieval
-- Kafka for async file processing
-- MinIO for object storage
+## 前端设计与实现的 Skill 协作
 
-Use this file as the first repo-local reference before making changes.
+用户提出网站、应用或后台的前端设计、优化、截图还原或页面实现任务时，默认将已安装的 `oil-ui`、`draw-ui` 和 `oil-motion` 纳入工作流程。开始前读取三个 Skill 的 `SKILL.md`，再按任务实际需要执行相关步骤：
 
-## First Read
+- `oil-ui`：确定视觉方向、页面层级和风格，并依据实际画面验收。
+- `draw-ui`：需要设计稿、参考图分析、截图还原或视觉素材时使用。
+- `oil-motion`：需要视频、序列帧或生成画面驱动的交互动画时使用；普通 CSS/JS 动效按常规前端方式实现。
 
-When a new agent thread starts in this repo, check these in order:
+尊重用户明确的视觉偏好、功能要求和项目约定；不因纳入这些 Skill 就自动购买服务、调用付费生成或添加无关动画。
 
-1. `AGENTS.md`
-2. `CLAUDE.md`
-3. repo root `.env` and `src/main/resources/application*.yml`
-4. `frontend/.env*`
-5. current runtime state: frontend dev server, backend process, ports, and browser behavior
+## 开始工作前
 
-Do not assume generic Spring Boot conventions before checking the actual local setup.
+新会话先依次查看：
 
-## Local Runtime Rules
+1. `AGENTS.md` 和 `CLAUDE.md`。
+2. 仓库根目录 `.env`、`src/main/resources/application*.yml`；只读取任务需要的配置，不输出密钥。
+3. `frontend/.env*` 和 Vite 代理配置。
+4. 当前运行状态：前端开发服务、后端进程、端口和浏览器实际行为。
 
-### Backend
+先核实本机配置，不套用通用的 Spring Boot 启动假设。
 
-This project is typically run from the IDE with hot deployment.
+## 本地运行与验证
 
-Important:
+### 后端
 
-- Do not restart the backend by default.
-- After changing Java code, prefer compiling to trigger hot reload:
+后端通常从 IDE 启动并支持热部署。修改 Java 代码后优先执行编译以触发热加载：
 
 ```bash
 mvn -q -DskipTests compile
 ```
 
-- Only attempt a manual restart if the user explicitly asks for it or if runtime evidence proves hot reload is not active.
+不要默认重启后端。只有用户明确要求，或运行证据表明热加载没有生效时，才手动重启。需要测试时运行 `mvn test`。
 
-### Frontend
+### 前端
 
-The frontend is usually already running in dev mode.
-
-Preferred validation target:
-
-```text
-http://localhost:9527
-```
-
-Do not waste time on full rebuild/deploy loops when the local dev server is already live.
-
-### Browser Verification
-
-For UI or interaction bugs, verify in a real browser.
-
-Common pages:
+前端通常已在开发模式运行，优先访问 `http://localhost:9527`。不要在开发服务可用时反复做完整构建或部署。常用页面：
 
 - `http://localhost:9527/#/chat`
 - `http://localhost:9527/#/chat-history`
 
-When validating frontend issues:
+按需使用 `cd frontend && pnpm exec eslint <file>` 或 `cd frontend && pnpm typecheck`。排查界面和交互问题时，在真实浏览器中查看页面、请求与响应体、控制台输出，再判断问题位于前端、后端、数据还是环境。
 
-1. open the real page
-2. inspect network requests and response bodies
-3. inspect console output
-4. only then decide whether the bug is frontend, backend, data, or environment
+## 配置来源
 
-## Configuration Sources
+- 后端本地配置：根目录 `.env`、`src/main/resources/application.yml`、`src/main/resources/application-dev.yml`。常用服务为 MySQL `localhost:3306`、Redis `localhost:6379`、后端 `localhost:8081`，实际以当前配置为准。
+- 前端配置：`frontend/.env*` 和 Vite 代理。本地浏览器请求可能显示为 `/proxy-default/...`，实际后端目标通常是 `http://localhost:8081/api/v1`。
+- `.env` 可能包含特殊字符和密钥；不要随意在 shell 中 `source .env`，不要把真实凭据写入文档或提交。
 
-### Backend config
+## 知据业务约束
 
-Primary local config comes from:
+### 对话历史
 
-- repo root `.env`
-- `src/main/resources/application.yml`
-- `src/main/resources/application-dev.yml`
+Redis 保存短期上下文和会话状态；持久化历史应保存在 MySQL。排查“历史为空”时，同时检查浏览器请求与响应、后端控制器和服务、数据库记录，以及运行中的后端是否加载了新代码。
 
-Typical local values include:
+### 组织与权限
 
-- MySQL on `localhost:3306`
-- Redis on `localhost:6379`
-- backend on `localhost:8081`
+知据使用组织标签及用户与组织关系。修改查询或管理页时，检查用户身份、组织标签、角色和显式查询参数的过滤逻辑；数据缺失也可能来自权限过滤。
 
-The local `.env` may contain values with special characters. Do not casually `source .env` in shell snippets unless you know the contents are shell-safe.
+### 引用与检索证据
 
-### Frontend config
+聊天响应中的引用映射需要贯穿持久化和历史渲染。修改历史存储时，检查引用预览是否仍可用。
 
-Primary frontend config comes from:
+## 修改与完成标准
 
-- `frontend/.env`
-- `frontend/.env.test`
-- Vite proxy/runtime env
+- 遵循现有仓库模式，优先完成最小且端到端的修复，避免无依据的重构。
+- 同时影响前后端的改动要验证两端；依赖运行状态的修复要沿实际使用路径复测。
+- 不因 Redis 中有数据就认定它是持久化来源；不只凭源码或页面外观宣称问题已修复。
+- 不为临时测试修改全局环境或 shell 启动文件。
+- 对运行中的功能改动，确认实际运行版本、浏览器请求与响应，以及相关 MySQL/Redis 数据；文档或静态文案改动按其影响范围验证即可。
 
-In local dev, the frontend proxies backend requests through the Vite dev server, so browser network requests may appear as:
-
-- `/proxy-default/...`
-
-even though the backend target is `http://localhost:8081/api/v1`.
-
-## Repo-Specific Engineering Notes
-
-### Chat history
-
-- Redis is for short-lived chat context and session state.
-- Persistent history must live in MySQL.
-- When debugging chat history, inspect all three layers:
-  - browser request/response
-  - backend controller/service path
-  - database contents
-
-Do not stop at “frontend shows empty”; verify whether:
-
-- the request was sent
-- the backend returned an empty array
-- the database actually contains rows
-- the running backend has loaded the latest code
-
-### Multi-tenant behavior
-
-PaiSmart uses organization tags and user/org relationships.
-
-When changing queries or admin views, verify whether filtering is driven by:
-
-- user identity
-- org tag
-- role
-- explicit query params
-
-Do not assume “missing data” is only a UI issue; it may be an unintended filter.
-
-### References / retrieval evidence
-
-If a chat response contains reference mappings, preserve them through persistence and history rendering. Do not regress the reference preview path when changing chat history storage.
-
-## Preferred Commands
-
-### Backend
-
-Compile only:
-
-```bash
-mvn -q -DskipTests compile
-```
-
-Run tests when needed:
-
-```bash
-mvn test
-```
-
-### Frontend
-
-Targeted lint:
-
-```bash
-cd frontend && pnpm exec eslint <file>
-```
-
-Type check:
-
-```bash
-cd frontend && pnpm typecheck
-```
-
-## Editing Guidance
-
-- Preserve existing repo patterns.
-- Prefer minimal, end-to-end fixes over speculative refactors.
-- If a change touches frontend and backend behavior, verify both sides.
-- If a fix depends on runtime state, re-run the natural validation path after the change.
-
-## What To Avoid
-
-- Do not assume restart-first backend workflows.
-- Do not assume Redis means durable persistence.
-- Do not claim a UI issue is fixed without checking the live page.
-- Do not change shell startup files or global environment for temporary repo tests.
-- Do not rely only on source inspection when runtime evidence is cheap to collect.
-
-## Done Criteria
-
-A task is not complete if any of these are still unclear:
-
-- which runtime is active
-- whether the latest code is actually loaded
-- what the browser request returned
-- whether the backing data store contains the expected data
-
-For this repo, “done” usually means:
-
-1. code changed
-2. backend compiled
-3. browser re-tested
-4. network response confirmed
-5. any relevant DB/Redis state checked when the symptom is data-related
+用户可见名称统一使用“知据 / KnowGround”。历史包名、数据库名、现有配置键和上游项目出处可能仍包含旧名称；修改这些运行标识前先评估迁移影响，不做全局文本替换。

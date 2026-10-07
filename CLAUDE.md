@@ -1,242 +1,34 @@
-# CLAUDE.md
+# CLAUDE.md：知据项目开发说明
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件供 Claude Code 在知据（KnowGround）仓库中使用。先遵循 [`AGENTS.md`](AGENTS.md) 的协作和验证约定，再参考本文的项目入口。用户可见名称是“知据”，现存的 `smartpai` 包名和部分类名属于历史运行标识。
 
-## Project Overview
+## 项目结构
 
-PaiSmart (派聪明) is an enterprise-grade AI knowledge management system built with RAG (Retrieval-Augmented Generation) technology. It provides intelligent document processing and retrieval capabilities using a modern tech stack including Spring Boot, Vue 3, Elasticsearch, and AI services.
+| 路径 | 内容 |
+| --- | --- |
+| `src/main/java/com/yizhaoqi/smartpai/` | Spring Boot 后端：控制器、服务、仓储、Kafka 消费者、模型客户端等 |
+| `src/main/resources/application*.yml` | 后端本地、开发和 Docker 环境配置 |
+| `frontend/src/` | Vue 3 + TypeScript 前端：页面、路由、状态、接口和组件 |
+| `frontend/.env*`、`frontend/vite.config.ts` | 前端环境变量与代理配置 |
+| `docs/` | 设计、迁移和部署资料；阅读具体文件前核对其是否适用于当前环境 |
+| `README.md` | 项目功能、技术栈、开发与部署现状的入口 |
 
-## Development Environment Setup
+主要链路是：文档上传到 MinIO，经 Kafka 异步解析与切分，调用 Embedding 服务向量化并写入 Elasticsearch；提问时检索相关内容，再调用大模型生成带引用的回答。MySQL 保存业务与持久化对话数据，Redis 保存缓存和短期上下文。
 
-### Prerequisites
-- Java 17
-- Maven 3.8.6+
-- Node.js 18.20.0+
-- pnpm 8.7.0+
-- MySQL 8.0
-- Elasticsearch 8.10.0
-- MinIO 8.5.12
-- Kafka 3.2.1
-- Redis 7.0.11
-- Docker (optional for services)
+## 本地开发
 
-### Quick Start with Docker
+后端通常由 IDE 运行并热加载。修改 Java 代码后先编译，不要默认重启：
+
 ```bash
-# Start all services
-cd docs && docker-compose up -d
-
-# Backend
-mvn spring-boot:run
-
-# Frontend
-cd frontend && pnpm install && pnpm dev
+mvn -q -DskipTests compile
 ```
 
-## Common Development Commands
+前端通常已在 `http://localhost:9527` 运行。需要自己启动时，在 `frontend` 目录执行 `pnpm install`、`pnpm dev`。需要验证时使用 `pnpm typecheck`，或只对改动文件运行 ESLint。相关服务地址与凭据以实际 `.env` 和 `application*.yml` 为准，避免把真实密钥输出到日志或文档。
 
-### Backend (Spring Boot)
-```bash
-# Run application
-mvn spring-boot:run
+排查页面问题时，检查真实浏览器中的请求、响应和控制台。排查聊天历史时，核对 MySQL 持久化记录与 Redis 短期状态；排查知识库问题时，再检查 MinIO、Kafka、Elasticsearch 和引用映射。
 
-# Build
-mvn clean package
+## 部署状态
 
-# Test
-mvn test
+当前部署步骤与未完成事项以 [`docs/cloud-deployment-plan.md`](docs/cloud-deployment-plan.md) 和 [`README.md`](README.md) 为准。`docs/docker-compose.yaml` 是历史依赖服务配置，不能仅凭 `docker-compose up -d` 就认定知据应用已完成生产部署。云端部署需要独立配置、数据复制与恢复、服务健康检查、HTTPS 和完整业务验收；迁移本机数据时保留原数据。
 
-# Run with specific profile
-mvn spring-boot:run -Dspring-boot.run.profiles=dev
-```
-
-### Frontend (Vue 3 + TypeScript)
-```bash
-# Install dependencies
-cd frontend && pnpm install
-
-# Development server
-pnpm dev
-
-# Build for production
-pnpm build
-
-# Type checking
-pnpm typecheck
-
-# Linting
-pnpm lint
-
-# Preview build
-pnpm preview
-```
-
-## Architecture Overview
-
-### Backend Structure
-```
-src/main/java/com/yizhaoqi/smartpai/
-├── SmartPaiApplication.java      # Main application entry
-├── client/                       # External API clients (DeepSeek, Embedding)
-├── config/                       # Configuration classes (Security, JWT, etc.)
-├── consumer/                     # Kafka consumers for async processing
-├── controller/                   # REST API endpoints
-├── entity/                       # JPA entities
-├── exception/                    # Custom exceptions
-├── handler/                      # WebSocket handlers
-├── model/                        # Domain models
-├── repository/                   # Data access layer
-├── service/                      # Business logic layer
-└── utils/                        # Utility classes
-```
-
-### Frontend Structure
-```
-frontend/src/
-├── assets/                       # Static assets (SVG, images)
-├── components/                   # Reusable Vue components
-├── layouts/                      # Page layouts
-├── router/                       # Vue Router configuration
-├── service/                      # API integration
-├── store/                        # Pinia state management
-├── views/                        # Page components
-└── utils/                        # Utility functions
-```
-
-## Key Components
-
-### Core Services
-- **DocumentService**: Handles document upload, parsing, and management
-- **ElasticsearchService**: Manages document indexing and search
-- **VectorizationService**: Converts text to embeddings using AI models
-- **ChatHandler**: Processes AI chat interactions with RAG
-- **UserService**: User authentication and management
-- **ConversationService**: Chat history and session management
-
-### AI Integration
-- **DeepSeek API**: Primary LLM for chat responses
-- **Embedding API**: Text-embedding-v4 for document vectorization
-- **RAG Pipeline**: Document → Chunk → Embedding → Search → Response
-
-### Multi-tenant Architecture
-- **Organization Tags**: Supports multi-tenant isolation
-- **Permission System**: Public/private document access control
-- **User-Organization Mapping**: Flexible user-to-org relationships
-
-## Configuration Files
-
-### Backend Configuration
-- `application.yml`: Main configuration with database, Redis, Kafka, AI services
-- `application-dev.yml`: Development-specific settings
-- `application-docker.yml`: Docker deployment settings
-
-### Frontend Configuration
-- `vite.config.ts`: Vite build configuration
-- `tsconfig.json`: TypeScript configuration
-- `pnpm-workspace.yaml`: Workspace configuration for monorepo
-
-## Database Schema
-
-The application uses MySQL as the primary database with JPA/Hibernate for ORM. Key entities include:
-- `User`: User accounts and authentication
-- `FileUpload`: Document metadata and storage info
-- `Conversation`: Chat sessions and history
-- `OrganizationTag`: Multi-tenant organization structure
-- `ChunkInfo`: Document chunks for vector search
-
-## External Dependencies
-
-### Services
-- **Elasticsearch 8.10.0**: Document search and vector storage
-- **Kafka 3.2.1**: Message queue for async file processing
-- **Redis 7.0.11**: Caching and session management
-- **MinIO 8.5.12**: File storage service
-- **MySQL 8.0**: Primary database
-
-### AI Services
-- **DeepSeek API**: LLM for generating responses
-- **DashScope Embedding**: Text-embedding-v4 for document vectorization
-
-## Development Workflow
-
-### Adding New Features
-1. Backend: Create entity → repository → service → controller
-2. Frontend: Create API service → store module → Vue component → router configuration
-3. Update database schema if needed (JPA auto-generates DDL)
-4. Test with both unit and integration tests
-
-### API Development
-- Follow RESTful conventions
-- Use proper HTTP status codes
-- Implement authentication/authorization via JWT
-- Add request validation and error handling
-
-### Frontend Development
-- Use Vue 3 Composition API with TypeScript
-- Follow established component patterns in `/src/components/`
-- Use Pinia for state management
-- Implement proper TypeScript types for API responses
-
-## Testing
-
-### Backend Testing
-```bash
-# Run all tests
-mvn test
-
-# Run specific test class
-mvn test -Dtest=UserServiceTest
-
-# Run with coverage
-mvn clean verify
-```
-
-### Frontend Testing
-```bash
-# Type checking
-pnpm typecheck
-
-# Linting
-pnpm lint
-
-# Build verification
-pnpm build
-```
-
-## Deployment
-
-### Docker Deployment
-```bash
-# Build backend
-mvn clean package
-
-# Build frontend
-cd frontend && pnpm build
-
-# Start services
-cd docs && docker-compose up -d
-```
-
-### Environment Variables
-Key configuration variables that should be set in production:
-- `JWT_SECRET_KEY`: JWT signing secret
-- `DEEPSEEK_API_KEY`: DeepSeek API credentials
-- `EMBEDDING_API_KEY`: Embedding service API key
-- Database credentials and service URLs
-
-## Security Considerations
-
-- JWT-based authentication with Spring Security
-- Role-based access control (admin/user)
-- Organization-level data isolation
-- File upload validation and size limits
-- CORS configuration for frontend integration
-- Input validation and sanitization
-
-## Performance Considerations
-
-- Elasticsearch for efficient document search
-- Redis caching for frequently accessed data
-- Kafka for asynchronous file processing
-- File chunking for large document processing
-- Vector embeddings for semantic search
-- Connection pooling for database and external services
+不要把示例密码当作生产凭据，也不要将本地或云端真实 `.env`、API Key、数据库口令提交到仓库。

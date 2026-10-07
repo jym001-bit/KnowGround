@@ -217,8 +217,7 @@ const local: App.I18n.Schema = {
         protocol: '《User Agreement》',
         and: 'and',
         policy: '《Privacy Policy》',
-        inviteCodeTip:
-          'This site is invite-only. If you do not have an invite code yet, follow the WeChat official account "沉默王二" and reply with "聪明".'
+        inviteCodeTip: 'This site is invite-only. Contact the KnowGround administrator to get an invite code.'
       },
       resetPwd: {
         title: 'Reset Password'

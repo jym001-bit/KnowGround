@@ -35,4 +35,4 @@ python3 /root/server-console-deploy/verify-beszel.py
 
 无密码的配置文件位于 `/etc/caddy/Caddyfile`、`/etc/server-console/config.json` 和 systemd 服务文件。Authelia 配置、用户密码哈希和 Beszel 环境文件含密钥，只应由 root 读取。面板源码位于 `/opt/server-console`，Hub 数据位于 `/var/lib/beszel-hub`。
 
-当前完成的是服务器管理面板。PaiSmart/RAG 应用和其 MySQL、Redis、Elasticsearch、Kafka、MinIO 尚未迁移到 VPS。面板中“重启服务”目前指向 `server-console.service`；部署应用后应把 `piUnit` 和健康检查改为实际应用服务。
+当前完成的是服务器管理面板。知据 RAG 应用和其 MySQL、Redis、Elasticsearch、Kafka、MinIO 尚未迁移到 VPS。面板中“重启服务”目前指向 `server-console.service`；部署应用后应把 `piUnit` 和健康检查改为实际应用服务。
