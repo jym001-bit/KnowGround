@@ -481,7 +481,7 @@ async function handleSourceFileClick(fileInfo: {
 
 .tool-event--success {
   border-color: rgb(24 160 88 / 0.25);
-  color: #18a058;
+  color: #8c806e;
 }
 
 .tool-event--failed {

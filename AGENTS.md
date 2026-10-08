@@ -1,6 +1,6 @@
 # AGENTS.md：知据项目协作约定
 
-本文件只约束在知据（KnowGround）仓库内工作的编码助手。知据是基于 RAG 的知识库项目，后端使用 Spring Boot，前端使用 Vue 3 + TypeScript；MySQL 保存业务数据，Redis 保存缓存、会话和短期对话上下文，Elasticsearch 用于检索，Kafka 用于异步文件处理，MinIO 用于对象存储。
+本文件只约束在知据（KnowGround）仓库内工作的编码助手。知据是基于 RAG 的知识库项目，后端使用 Spring Boot，前端使用 Vue 3 + TypeScript；MySQL 保存业务数据，Redis 保存缓存、会话和短期对话上下文，Elasticsearch 用于检索，Kafka 用于异步文件处理。本机对象存储是 MinIO，云端是兼容 S3 API 的 RustFS，代码沿用 `MINIO_*` 配置名。
 
 ## 沟通方式
 

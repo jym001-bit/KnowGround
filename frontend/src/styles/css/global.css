@@ -3,20 +3,20 @@
 @import './transition.css';
 
 :root {
-  --notice-background: #ffffff;
-  --notice-heading: #233c30;
-  --notice-text: #64776a;
-  --notice-accent: #167565;
-  --notice-border: #dce8de;
-  --notice-icon-background: #e7f3e9;
+  --notice-background: #f8f5ee;
+  --notice-heading: #4c4840;
+  --notice-text: #81796e;
+  --notice-accent: #8c806e;
+  --notice-border: #d8d0c3;
+  --notice-icon-background: #ebe4d7;
 }
 html.dark {
-  --notice-background: #233229;
-  --notice-heading: #edf5ed;
-  --notice-text: #b8cabc;
-  --notice-accent: #9cd7b3;
-  --notice-border: #3d5142;
-  --notice-icon-background: #334e3b;
+  --notice-background: #292824;
+  --notice-heading: #e8e1d7;
+  --notice-text: #b5aa9a;
+  --notice-accent: #c8b89e;
+  --notice-border: #4b443a;
+  --notice-icon-background: #38332c;
 }
 .n-notification {
   border: 1px solid var(--notice-border);

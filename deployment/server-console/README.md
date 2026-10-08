@@ -4,8 +4,8 @@
 
 ## 访问
 
-- 管理面板：<https://jym-debug.duckdns.org/server/>
-- 监控入口：管理面板中的“监控”，或 <https://jym-debug.duckdns.org/server/#monitor>
+- 管理面板：<https://jymcode.top/server/>
+- 监控入口：管理面板中的“监控”，或 <https://jymcode.top/server/#monitor>
 - 登录账号：`admin`
 - 初始密码：从自己的电脑 SSH 登录 VPS 后，在 VPS 终端运行 `sed -n 's/^Random Password: //p' /root/server-console-initial-credentials.txt`。不要把输出发送给别人。
 
@@ -35,4 +35,4 @@ python3 /root/server-console-deploy/verify-beszel.py
 
 无密码的配置文件位于 `/etc/caddy/Caddyfile`、`/etc/server-console/config.json` 和 systemd 服务文件。Authelia 配置、用户密码哈希和 Beszel 环境文件含密钥，只应由 root 读取。面板源码位于 `/opt/server-console`，Hub 数据位于 `/var/lib/beszel-hub`。
 
-当前完成的是服务器管理面板。知据 RAG 应用和其 MySQL、Redis、Elasticsearch、Kafka、MinIO 尚未迁移到 VPS。面板中“重启服务”目前指向 `server-console.service`；部署应用后应把 `piUnit` 和健康检查改为实际应用服务。
+知据 RAG 已部署在同一服务器的 <https://jymcode.top/rag/>，使用 Docker Compose 运行 MySQL、Redis、Elasticsearch、Kafka、RustFS 和 API。面板中的“重启服务”仍指向 `server-console.service`，不等于重启知据。旧 DuckDNS 网站路由、Authelia Cookie 域和 API 来源已从服务器配置中移除；在 DuckDNS 控制台删除旧子域名记录后即可完成解绑。

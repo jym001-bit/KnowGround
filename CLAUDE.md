@@ -13,7 +13,7 @@
 | `docs/` | 设计、迁移和部署资料；阅读具体文件前核对其是否适用于当前环境 |
 | `README.md` | 项目功能、技术栈、开发与部署现状的入口 |
 
-主要链路是：文档上传到 MinIO，经 Kafka 异步解析与切分，调用 Embedding 服务向量化并写入 Elasticsearch；提问时检索相关内容，再调用大模型生成带引用的回答。MySQL 保存业务与持久化对话数据，Redis 保存缓存和短期上下文。
+主要链路是：文档上传到 S3 兼容对象存储（本机 MinIO、云端 RustFS），经 Kafka 异步解析与切分，调用 Embedding 服务向量化并写入 Elasticsearch；提问时检索相关内容，再调用大模型生成带引用的回答。MySQL 保存业务与持久化对话数据，Redis 保存缓存和短期上下文。
 
 ## 本地开发
 
@@ -25,10 +25,10 @@ mvn -q -DskipTests compile
 
 前端通常已在 `http://localhost:9527` 运行。需要自己启动时，在 `frontend` 目录执行 `pnpm install`、`pnpm dev`。需要验证时使用 `pnpm typecheck`，或只对改动文件运行 ESLint。相关服务地址与凭据以实际 `.env` 和 `application*.yml` 为准，避免把真实密钥输出到日志或文档。
 
-排查页面问题时，检查真实浏览器中的请求、响应和控制台。排查聊天历史时，核对 MySQL 持久化记录与 Redis 短期状态；排查知识库问题时，再检查 MinIO、Kafka、Elasticsearch 和引用映射。
+排查页面问题时，检查真实浏览器中的请求、响应和控制台。排查聊天历史时，核对 MySQL 持久化记录与 Redis 短期状态；排查知识库问题时，再检查对象存储、Kafka、Elasticsearch 和引用映射。
 
 ## 部署状态
 
-当前部署步骤与未完成事项以 [`docs/cloud-deployment-plan.md`](docs/cloud-deployment-plan.md) 和 [`README.md`](README.md) 为准。`docs/docker-compose.yaml` 是历史依赖服务配置，不能仅凭 `docker-compose up -d` 就认定知据应用已完成生产部署。云端部署需要独立配置、数据复制与恢复、服务健康检查、HTTPS 和完整业务验收；迁移本机数据时保留原数据。
+云端当前状态及剩余业务验收以 [`deployment/cloud/README.md`](deployment/cloud/README.md) 和 [`README.md`](README.md) 为准。`docs/docker-compose.yaml` 是历史依赖服务配置；实际云端编排在 `deployment/cloud/compose.yaml`。迁移本机数据时保留原数据，公网首页已接入知据，真实账号业务流程仍需验证。
 
 不要把示例密码当作生产凭据，也不要将本地或云端真实 `.env`、API Key、数据库口令提交到仓库。

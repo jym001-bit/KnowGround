@@ -14,7 +14,7 @@ const { selectedKey } = useMenu();
 </script>
 
 <template>
-  <Teleport :to="`#${GLOBAL_HEADER_MENU_ID}`">
+  <Teleport defer :to="`#${GLOBAL_HEADER_MENU_ID}`">
     <NMenu
       mode="horizontal"
       :value="selectedKey"

@@ -10,7 +10,7 @@ authentication_backend:
 access_control:
   default_policy: 'deny'
   rules:
-    - domain: 'jym-debug.duckdns.org'
+    - domain: 'jymcode.top'
       policy: 'one_factor'
       subject:
         - 'user:admin'
@@ -19,9 +19,9 @@ session:
   secret: '__SESSION_SECRET__'
   cookies:
     - name: 'authelia_session'
-      domain: 'jym-debug.duckdns.org'
-      authelia_url: 'https://jym-debug.duckdns.org/authelia/'
-      default_redirection_url: 'https://jym-debug.duckdns.org/server/'
+      domain: 'jymcode.top'
+      authelia_url: 'https://jymcode.top/authelia/'
+      default_redirection_url: 'https://jymcode.top/server/'
       inactivity: '15m'
       expiration: '2h'
       remember_me: '0'

@@ -722,7 +722,14 @@ public class UploadService {
         if (StringUtils.isBlank(minioUrl) || Objects.equals(minioConfig.getEndpoint(), minioConfig.getPublicUrl())) {
             return minioUrl;
         }
-        return minioUrl.replaceFirst(minioConfig.getEndpoint(), minioConfig.getPublicUrl());
+        String endpoint = minioConfig.getEndpoint();
+        if (!minioUrl.startsWith(endpoint)) {
+            return minioUrl;
+        }
+        String publicOrigin = "same-origin".equalsIgnoreCase(minioConfig.getPublicUrl())
+                ? ""
+                : minioConfig.getPublicUrl();
+        return publicOrigin + minioUrl.substring(endpoint.length());
     }
 
     private FileUpload getOrCreateFileUpload(String fileMd5,

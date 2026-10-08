@@ -230,7 +230,8 @@ export const useChatStore = defineStore(SetupStoreId.Chat, () => {
     if (!token) {
       return undefined;
     }
-    return `/proxy-ws/chat/${encodeURIComponent(token)}`;
+    const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+    return `${basePath}/proxy-ws/chat/${encodeURIComponent(token)}`;
   });
 
   const {

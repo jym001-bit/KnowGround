@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 
 BASE = "http://127.0.0.1:8090/api/collections"
+# Existing Beszel account identifier; it is not a DNS or website binding.
 IDENTITY = "admin@jym-debug.duckdns.org"
 HEADERS = {"X-Beszel-Identity": IDENTITY}
 

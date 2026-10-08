@@ -2,11 +2,11 @@
 
 ![知据项目图标](frontend/public/favicon.svg)
 
-知据是我在 PaiSmart 代码基础上学习和开发的 RAG 知识库项目。它把文档上传、解析、检索和对话串起来，让回答可以回溯到文档来源。仓库仍保留部分 `PaiSmart` / `smartpai` 命名，应用和云端部署也仍在完善；本文描述当前代码与已验证的运行状态。
+知据是我在 PaiSmart 代码基础上学习和开发的 RAG 知识库项目。它把文档上传、解析、检索和对话串起来，让回答可以回溯到文档来源。仓库仍保留部分 `PaiSmart` / `smartpai` 运行标识；本文描述当前代码与已验证的运行状态。
 
 ![本地开发环境中的知据登录页](docs/images/login.png)
 
-> 上图截自本地开发环境的 `/#/login`，不含账号和业务数据。云服务器上的管理面板与知据应用是两个独立系统；目前上线的是管理面板，知据应用尚未完成迁移。
+> 上图截自本地开发环境的 `/#/login`，不含账号和业务数据。知据入口是 `https://jymcode.top/rag/`；服务器管理面板在 `https://jymcode.top/server/`。
 
 ## 导航
 
@@ -42,7 +42,7 @@ flowchart LR
     B --> M[(MySQL<br/>用户、文档元数据、聊天历史)]
     B --> R[(Redis<br/>短期状态与上下文)]
     B --> K[Kafka<br/>文件处理任务]
-    B --> O[(MinIO<br/>原始文件)]
+    B --> O[(S3 兼容存储<br/>本机 MinIO / 云端 RustFS)]
     B --> E[(Elasticsearch<br/>文本与向量索引)]
     B --> D[DeepSeek API<br/>生成回答]
     B --> A[Embedding API<br/>生成向量]
@@ -56,7 +56,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    UP[上传文件] --> STORE[MinIO 保存原文件]
+    UP[上传文件] --> STORE[S3 兼容存储保存原文件]
     STORE --> QUEUE[Kafka 异步任务]
     QUEUE --> PARSE[解析、分块]
     PARSE --> EMB[Embedding 向量化]
@@ -69,17 +69,17 @@ flowchart TD
     REF --> HISTORY[MySQL 保存会话]
 ```
 
-**数据分工：**MySQL 保存需要长期保留的业务数据和聊天历史；MinIO 保存文件；Elasticsearch 保存可检索索引；Redis 用于短期状态，不应当作聊天历史的唯一存储。Kafka 承接异步任务，迁移前要确认待处理消息已消费完。
+**数据分工：**MySQL 保存需要长期保留的业务数据和聊天历史；本机 MinIO、云端 RustFS 保存文件；Elasticsearch 保存可检索索引；Redis 用于短期状态，不应当作聊天历史的唯一存储。Kafka 承接异步任务。
 
 ## 技术栈
 
 | 分类 | 版本或组件 | 在项目中的作用 | 配置/代码依据 |
 | --- | --- | --- | --- |
-| 后端 | Java 17、Spring Boot 3.4.2、Maven | API、业务逻辑和 WebSocket | [`pom.xml`](pom.xml) |
+| 后端 | Java 17 编译目标、云端 Java 21、Spring Boot 3.4.2、Maven | API、业务逻辑和 WebSocket | [`pom.xml`](pom.xml)、[`Dockerfile.api`](deployment/cloud/Dockerfile.api) |
 | 前端 | Vue 3、TypeScript、Vite 6、Naive UI、Pinia、Vue Router、UnoCSS、pnpm | 页面与状态管理 | [`frontend/package.json`](frontend/package.json) |
 | 数据库 | MySQL 8、Spring Data JPA | 用户、文档元数据、会话与记录 | [`application.yml`](src/main/resources/application.yml) |
 | 缓存/消息 | Redis、Spring Kafka、Apache Kafka | 短期生成状态与异步文件处理 | 后端配置和消费者代码 |
-| 搜索/文件 | Elasticsearch 8.10.x、MinIO | 混合检索、向量索引与原文件 | [`docs/docker-compose.yaml`](docs/docker-compose.yaml) |
+| 搜索/文件 | 云端 Elasticsearch 8.10.4、RustFS；本机 MinIO | 混合检索、向量索引与原文件 | [`deployment/cloud/compose.yaml`](deployment/cloud/compose.yaml) |
 | 文档解析 | Apache Tika、PDF 处理代码、LiteParse `lit` | 文本提取和 PDF 解析 | `DocumentService`、`ParseService` |
 | AI | DeepSeek API、DashScope Embedding API | 回答生成与向量化 | `DeepSeekClient`、`EmbeddingClient` |
 | 安全 | Spring Security、JWT | 身份认证与访问控制 | `SecurityConfig` |
@@ -186,7 +186,7 @@ KnowGround/
 ├── docs/                               # 数据库脚本和开发/部署记录
 ├── deployment/server-console/          # 已部署的独立 VPS 管理面板资料
 ├── .env.example                        # 本地配置样例
-├── .env.cloud.example                  # 云端配置样例，尚需部署适配
+├── .env.cloud.example                  # 云端配置样例，真实值不入库
 ├── pom.xml                              # Maven 依赖
 └── README.md
 ```
@@ -207,32 +207,30 @@ KnowGround/
 | --- | --- |
 | Ubuntu VPS、SSH、Docker、Docker Compose、HTTPS | 已准备 |
 | 独立服务器管理面板与 Beszel 监控 | 已部署，见 [面板说明](deployment/server-console/README.md) |
-| 知据应用的云端 Compose、前后端镜像 | **待完成** |
-| MySQL、MinIO、Elasticsearch 的业务数据复制 | **待完成** |
-| 云端登录、上传、问答、引用与历史的端到端验证 | **待完成** |
+| 知据应用的云端 Compose、前后端镜像 | 已部署；入口为 [jymcode.top/rag/](https://jymcode.top/rag/)，[服务器 IP](https://23.252.124.29/) 仍可访问 |
+| MySQL、对象存储与检索索引 | 已复制 / 重建：15 张表、3 个文件、587 条检索文档；本机原数据保留 |
+| 新域名的登录与旧文档预览 | 已由用户在浏览器验证；上传、问答与引用仍需逐项验收 |
 
-因此当前**没有一条可以直接运行并完成知据上线的 `docker compose up` 命令**。现有 [`docs/docker-compose.yaml`](docs/docker-compose.yaml) 主要是开发基础设施示例：密码写死、数据库端口暴露、Kafka 广播 `localhost`、Elasticsearch 使用 2 GB 堆。2 核 4 GB VPS 需要独立的云端 Compose、内存限制和安全配置。详情见 [云端部署准备记录](docs/cloud-deployment-plan.md)。
+云端编排使用 [`deployment/cloud/compose.yaml`](deployment/cloud/compose.yaml)，运维与回退命令见 [云端运行手册](deployment/cloud/README.md)。现有 [`docs/docker-compose.yaml`](docs/docker-compose.yaml) 是旧开发示例，不能用于当前 VPS。
 
-### 计划中的部署顺序
+### 本次部署顺序
 
-1. **盘点数据**：确认本机 MySQL、MinIO 和 Elasticsearch 的数据量及可访问状态，确定要迁移的库、桶和索引。Redis 只保存短期状态，不能用它替代 MySQL 聊天历史。
-2. **做只读备份**：从本机导出 MySQL、复制 MinIO 对象；对 Elasticsearch 选择快照迁移或经验证的重建方式。保留本机原数据，并校验备份可读、大小和记录数。
-3. **制作云端专用配置**：使用 [`.env.cloud.example`](.env.cloud.example) 填写独立的云端凭据；容器间使用服务名通信，数据库和中间件端口只在内网开放。真实 `.env.cloud` 不入库。
-4. **构建镜像**：后端镜像包含 Java 运行环境及实际需要的 PDF 解析依赖；前端构建产物由 Web 服务提供。Elasticsearch 插件应与镜像版本匹配，避免每次启动临时下载。
-5. **恢复并启动**：先启动数据库和中间件并恢复数据，再启动后端、前端及 HTTPS 代理；检查容器健康、日志、接口和磁盘/内存使用。
-6. **验收与切换**：实测登录、上传 PDF、解析向量化、检索问答、引用预览和历史记录。确认云端与备份数据一致后再把访问入口切到云端。
+1. 从本机只读导出 MySQL 与 MinIO 对象并校验 SHA-256；保留本机原件。
+2. 使用独立的 [`.env.cloud.example`](.env.cloud.example) 对应云端配置，启动 MySQL、Redis、Kafka、RustFS、Elasticsearch 和后端；只让 Caddy 暴露 HTTPS。
+3. 恢复 15 张表、3 个文件；本机 Elasticsearch 许可证过期，未修改本机许可证，而是从 MySQL 文本分块在云端重建 587 条索引。
+4. 在 `jymcode.top/rag/` 提供知据，在同一域名的 `/server/` 提供管理面板；验证首页、API 限制、真实文件预签名下载及容器健康。
 
-迁移采用**复制**：本机数据保留。云端只包含备份时间点的数据；切换前本机新增的数据需要再次同步。35 GB 磁盘和 4 GB 内存对全套服务较紧张，部署前要按实际数据量核算。
+迁移采用**复制**：本机数据保留。云端只包含备份时间点的数据；本机后续新增内容不会自动同步。VPS 的 4 GB 内存对完整服务较紧张，需持续观察内存、swap 和磁盘。
 
-### 需要提前验证的部署细节
+### 已验证与待验证
 
-| 风险点 | 为什么要验证 |
+| 项目 | 当前结果 |
 | --- | --- |
-| MinIO 公网 URL 与签名下载 | 内网地址生成签名后直接替换域名可能造成下载 403 |
-| LiteParse `lit` | 容器中缺少命令会导致 PDF 解析失败 |
-| Elasticsearch IK 插件 | 插件版本必须与 ES 对应，启动时在线安装不稳定 |
-| `/api/v1/test/**` 和 `/api/v1/internal/ocr/**` | 目前安全配置允许访问，上线前需限制公网入口 |
-| 模型 API Key 与额度 | 云端应使用独立密钥并确认计费与限额 |
+| S3 兼容存储 | 云端使用仍在维护的 RustFS，后端保留 `MINIO_*` 配置名；合并对象和预签名下载已验证 |
+| Elasticsearch IK 插件 | 与 ES 8.10.4 一起打入镜像，587 条索引重建成功 |
+| `/api/v1/test/**` 和 `/api/v1/internal/ocr/**` | 已在公网 Caddy 返回 404 |
+| LiteParse `lit`、PDF 上传与异步解析 | 后端镜像已成功解析真实迁移 PDF；**网页上传链路待验收** |
+| 登录、问答、引用与历史 | 手机端已确认原账号登录、旧文档和历史可见；最近一次回答与引用映射已写入 MySQL，**页面展示和预览待确认** |
 
 ## 验证与排障
 

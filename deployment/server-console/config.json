@@ -2,7 +2,7 @@
   "stateDir": "/var/lib/server-console",
   "socket": "/run/server-console/http.sock",
   "socketGroup": "caddy",
-  "origin": "https://jym-debug.duckdns.org",
+  "origin": "https://jymcode.top",
   "user": "admin",
   "cookieName": "authelia_session",
   "unitPrefix": "sc-task",

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-domain=jym-debug.duckdns.org
+domain=jymcode.top
 server_ip=23.252.124.29
 image=authelia/authelia:4.39.25
 base=/root/server-console-deploy

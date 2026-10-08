@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yizhaoqi.smartpai.service.ChatHandler;
 import com.yizhaoqi.smartpai.service.ChatSessionRegistry;
 import com.yizhaoqi.smartpai.utils.JwtUtils;
+import java.io.IOException;
 import java.util.Map;
 
 @Component
@@ -66,7 +67,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 "message", "WebSocket连接已建立"
             );
             String jsonMessage = objectMapper.writeValueAsString(connectionMessage);
-            session.sendMessage(new TextMessage(jsonMessage));
+            sendText(session, jsonMessage);
             logger.info("已发送会话ID到前端: sessionId={}", session.getId());
         } catch (Exception e) {
             logger.error("发送会话ID失败: {}", e.getMessage(), e);
@@ -81,7 +82,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
             // 心跳消息只用于保活连接，不进入聊天处理链路。
             if (HEARTBEAT_PING.equals(payload)) {
-                session.sendMessage(new TextMessage(HEARTBEAT_PONG));
+                sendText(session, HEARTBEAT_PONG);
                 return;
             }
 
@@ -164,10 +165,18 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private void sendErrorMessage(WebSocketSession session, String errorMessage) {
         try {
             Map<String, String> error = Map.of("error", errorMessage);
-            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(error)));
+            sendText(session, objectMapper.writeValueAsString(error));
             logger.info("已发送错误消息到会话: {}, 错误: {}", session.getId(), errorMessage);
         } catch (Exception e) {
             logger.error("发送错误消息失败: {}", e.getMessage(), e);
+        }
+    }
+
+    private void sendText(WebSocketSession session, String payload) throws IOException {
+        synchronized (session) {
+            if (session.isOpen()) {
+                session.sendMessage(new TextMessage(payload));
+            }
         }
     }
     

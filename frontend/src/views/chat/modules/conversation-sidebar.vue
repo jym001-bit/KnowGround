@@ -55,7 +55,7 @@ function formatDate(dateStr?: string) {
 
 <template>
   <div
-    class="conversation-panel relative h-full shrink-0 flex flex-col overflow-hidden border-r border-#eef0f4 bg-#f8f9fb transition-[width] duration-200 ease-out dark:border-#ffffff0f dark:bg-#ffffff05"
+    class="conversation-panel relative h-full shrink-0 flex flex-col overflow-hidden border-r border-#ded7ca bg-#f1ece3 transition-[width] duration-200 ease-out dark:border-#ffffff0f dark:bg-#ffffff05"
     :data-collapsed="collapsed"
     :class="collapsed ? 'w-0 min-w-0 border-r-0' : 'w-[260px] min-w-[260px]'"
   >
@@ -83,7 +83,7 @@ function formatDate(dateStr?: string) {
           class="flex-1 cursor-pointer rounded-md px-3 py-1.5 text-center text-14px font-500 transition-all"
           :class="
             activeTab === 'active'
-              ? 'bg-white text-[rgb(var(--primary-color))] shadow-sm dark:bg-[#FFFFFF14] dark:text-(--primary-color)'
+              ? 'bg-#f8f5ee text-[rgb(var(--primary-color))] shadow-sm dark:bg-[#FFFFFF14] dark:text-(--primary-color)'
               : 'text-#666 dark:text-#999'
           "
           @click="setActiveTab('active')"
@@ -94,7 +94,7 @@ function formatDate(dateStr?: string) {
           class="flex-1 cursor-pointer rounded-md px-3 py-1.5 text-center text-14px font-500 transition-all"
           :class="
             activeTab === 'archived'
-              ? 'bg-white text-[rgb(var(--primary-color))] shadow-sm dark:bg-[#FFFFFF14] dark:text-(--primary-color)'
+              ? 'bg-#f8f5ee text-[rgb(var(--primary-color))] shadow-sm dark:bg-[#FFFFFF14] dark:text-(--primary-color)'
               : 'text-#666 dark:text-#999'
           "
           @click="setActiveTab('archived')"
