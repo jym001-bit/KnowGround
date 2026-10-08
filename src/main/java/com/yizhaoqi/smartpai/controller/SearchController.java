@@ -4,6 +4,8 @@ import com.yizhaoqi.smartpai.service.HybridSearchService;
 import com.yizhaoqi.smartpai.utils.LogUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 import com.yizhaoqi.smartpai.entity.SearchResult;
 
 import java.util.List;
@@ -47,19 +49,15 @@ public class SearchController {
     public Map<String, Object> hybridSearch(@RequestParam String query,
                                             @RequestParam(defaultValue = "10") int topK,
                                             @RequestAttribute(value = "userId", required = false) String userId) {
+        if (userId == null || userId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "请先登录后再搜索知识库");
+        }
         LogUtils.PerformanceMonitor monitor = LogUtils.startPerformanceMonitor("HYBRID_SEARCH");
         try {
             LogUtils.logBusiness("HYBRID_SEARCH", userId != null ? userId : "anonymous", 
                     "开始混合检索: query=%s, topK=%d", query, topK);
             
-            List<SearchResult> results;
-            if (userId != null) {
-                // 如果有用户ID，使用带权限的搜索
-                results = hybridSearchService.searchWithPermission(query, userId, topK);
-            } else {
-                // 如果没有用户ID，使用普通搜索（仅公开内容）
-                results = hybridSearchService.search(query, topK);
-            }
+            List<SearchResult> results = hybridSearchService.searchWithPermission(query, userId, topK);
             
             LogUtils.logUserOperation(userId != null ? userId : "anonymous", "HYBRID_SEARCH", 
                     "search_query", "SUCCESS");

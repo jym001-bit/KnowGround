@@ -1,6 +1,6 @@
 <template>
   <svg width="1em" height="1em" aria-hidden="true" viewBox="0 0 40 40" fill="none">
-    <rect width="40" height="40" rx="12" fill="#167565" />
+    <rect width="40" height="40" rx="12" fill="#8c806e" />
     <path
       d="M11 11v18m18-18L18 20l11 9M11 20h7"
       stroke="#fff"
@@ -8,6 +8,6 @@
       stroke-linecap="round"
       stroke-linejoin="round"
     />
-    <circle cx="29" cy="11" r="3" fill="#c8edb1" />
+    <circle cx="29" cy="11" r="3" fill="#e8ddca" />
   </svg>
 </template>

@@ -17,6 +17,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
   const tabStore = useTabStore();
   const { toLogin, redirectFromLogin } = useRouterPush(false);
   const { loading: loginLoading, startLoading, endLoading } = useLoading();
+  const invalidCredentials = ref(false);
 
   const token = ref(getToken());
   const defaultUserInfo: Api.Auth.UserInfo = {
@@ -102,6 +103,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
    */
   async function login(userName: string, password: string, redirect = true) {
     startLoading();
+    invalidCredentials.value = false;
 
     const { data: loginToken, error } = await fetchLogin(userName, password);
 
@@ -131,6 +133,8 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
         return true;
       }
     } else {
+      // The login endpoint uses 401 for an invalid username or password.
+      invalidCredentials.value = error.response?.status === 401;
       resetStore();
     }
 
@@ -201,6 +205,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     isLogin,
     isAdmin,
     loginLoading,
+    invalidCredentials,
     resetStore,
     login,
     logout,

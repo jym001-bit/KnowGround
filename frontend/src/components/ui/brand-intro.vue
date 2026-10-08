@@ -45,8 +45,9 @@ onUnmounted(() => clearTimeout(timer));
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: #f0f4ed;
-  color: #206e5a;
+  background: #f8f5ee;
+  color: #685f52;
+  color-scheme: light;
 }
 .brand-intro::before,
 .brand-intro::after {
@@ -54,7 +55,7 @@ onUnmounted(() => clearTimeout(timer));
   position: absolute;
   width: min(76vw, 780px);
   aspect-ratio: 1;
-  border: 1px solid #dce7d7;
+  border: 1px solid #ded5c7;
   border-radius: 50%;
   pointer-events: none;
 }
@@ -72,17 +73,17 @@ onUnmounted(() => clearTimeout(timer));
   margin-left: 10px;
   font-size: 9px;
   letter-spacing: 2px;
-  color: #809181;
+  color: #9b9183;
 }
 .intro-skip {
   position: absolute;
   top: 28px;
   right: 36px;
   padding: 10px 16px;
-  border: 1px solid #cddccc;
+  border: 1px solid #d7cdbd;
   border-radius: 30px;
   background: transparent;
-  color: #547960;
+  color: #756b5d;
   font-size: 12px;
   cursor: pointer;
   z-index: 1;
@@ -91,14 +92,14 @@ onUnmounted(() => clearTimeout(timer));
   margin-left: 10px;
 }
 .intro-skip:hover {
-  background: #e2ecde;
+  background: #eee8dd;
 }
 .intro-skip:focus-visible {
-  outline: 2px solid #49876b;
+  outline: 2px solid #8c806e;
   outline-offset: 4px;
 }
 .intro-center {
-  width: min(570px, 80vw);
+  width: min(860px, 94vw);
   text-align: center;
   z-index: 1;
 }
@@ -108,7 +109,8 @@ onUnmounted(() => clearTimeout(timer));
   animation: arrive 0.6s ease both;
 }
 .intro-lettering {
-  width: 100%;
+  width: min(720px, 100%);
+  margin-inline: auto;
 }
 .intro-center h1 {
   font-size: 26px;
@@ -120,17 +122,17 @@ onUnmounted(() => clearTimeout(timer));
 .intro-center p {
   font-size: 13px;
   letter-spacing: 3px;
-  color: #6f8474;
+  color: #928778;
   animation: arrive 0.7s ease 1.95s both;
 }
 .intro-line {
   position: relative;
-  width: min(380px, 72vw);
+  width: min(760px, 90vw);
   height: 6px;
   border-radius: 999px;
-  background: #cddacd;
+  background: #ded5c7;
   margin: 42px auto 0;
-  box-shadow: inset 0 1px 2px rgb(32 84 57 / 10%);
+  box-shadow: inset 0 1px 2px rgb(104 95 82 / 10%);
 }
 .intro-line span {
   display: block;
@@ -138,8 +140,8 @@ onUnmounted(() => clearTimeout(timer));
   width: 0;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #5c9b75 0%, #176f59 72%, #259172 100%);
-  box-shadow: 0 0 14px rgb(23 111 89 / 30%);
+  background: linear-gradient(90deg, #c9baa2 0%, #8c806e 72%, #a79880 100%);
+  box-shadow: 0 0 14px rgb(140 128 110 / 22%);
   will-change: width;
   animation: progress 3.35s cubic-bezier(0.38, 0, 0.18, 1) both;
 }
@@ -150,40 +152,20 @@ onUnmounted(() => clearTimeout(timer));
   right: -5px;
   width: 10px;
   height: 10px;
-  border: 2px solid #f0f4ed;
+  border: 2px solid #f8f5ee;
   border-radius: 50%;
-  background: #167565;
+  background: #8c806e;
   box-shadow:
-    0 0 0 4px rgb(22 117 101 / 12%),
-    0 0 14px rgb(22 117 101 / 32%);
+    0 0 0 4px rgb(140 128 110 / 12%),
+    0 0 14px rgb(140 128 110 / 26%);
   transform: translateY(-50%);
 }
 .intro-footer {
   position: absolute;
   bottom: 30px;
-  color: #91a18f;
+  color: #a69a89;
   font-size: 9px;
   letter-spacing: 3px;
-}
-.dark .brand-intro {
-  background: #17261e;
-  color: #a5d1ad;
-}
-.dark .brand-intro::before,
-.dark .brand-intro::after {
-  border-color: #293c2e;
-}
-.dark .intro-center p,
-.dark .intro-skip {
-  color: #aec2af;
-}
-.dark .intro-line {
-  background: rgb(94 123 99 / 45%);
-  box-shadow: inset 0 1px 2px rgb(0 0 0 / 18%);
-}
-.dark .intro-line span::after {
-  border-color: #17261e;
-  background: #9cd7b3;
 }
 @keyframes arrive {
   from {

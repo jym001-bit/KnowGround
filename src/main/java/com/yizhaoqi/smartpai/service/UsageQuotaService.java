@@ -31,10 +31,13 @@ public class UsageQuotaService {
 
     protected final StringRedisTemplate stringRedisTemplate;
     protected final UsageQuotaProperties properties;
+    protected final QuotaExemptionService quotaExemptionService;
 
-    public UsageQuotaService(StringRedisTemplate stringRedisTemplate, UsageQuotaProperties properties) {
+    public UsageQuotaService(StringRedisTemplate stringRedisTemplate, UsageQuotaProperties properties,
+                             QuotaExemptionService quotaExemptionService) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.properties = properties;
+        this.quotaExemptionService = quotaExemptionService;
     }
 
     public TokenReservation reserveLlmTokens(String userId, int estimatedPromptTokens, int maxCompletionTokens) {
@@ -67,6 +70,9 @@ public class UsageQuotaService {
             long dayLimit,
             long dayWindowSeconds
     ) {
+        if (quotaExemptionService.isExempt(userId)) {
+            return TokenReservationBundle.noop("llm", userId);
+        }
         int reserveTokens = Math.max(estimatedPromptTokens, 0) + Math.max(maxCompletionTokens, 0);
         reserveTokens = Math.max(reserveTokens, 1);
 
@@ -107,6 +113,9 @@ public class UsageQuotaService {
             long dayLimit,
             long dayWindowSeconds
     ) {
+        if (quotaExemptionService.isExempt(userId)) {
+            return TokenReservationBundle.noop(budgetScope, userId);
+        }
         int reserveTokens = Math.max(estimateEmbeddingTokens(texts), 1);
 
         List<TokenReservation> reservations = new java.util.ArrayList<>(3);
@@ -440,7 +449,7 @@ public class UsageQuotaService {
     }
 
     private boolean isQuotaManaged(String userId) {
-        return userId != null && !userId.isBlank() && !userId.startsWith("system");
+        return userId != null && !userId.isBlank() && !quotaExemptionService.isExempt(userId);
     }
 
     private UserUsageSnapshot emptySnapshot() {

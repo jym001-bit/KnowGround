@@ -6,7 +6,7 @@ import { toggleHtmlClass } from '@/utils/common';
 import systemLogo from '@/assets/svg-icon/logo.svg?raw';
 
 export function setupLoading() {
-  const themeColor = localStg.get('themeColor') || '#167565';
+  const themeColor = localStg.get('themeColor') || '#8c806e';
   const darkMode = localStg.get('darkMode') || false;
   const { r, g, b } = getRgb(themeColor);
 

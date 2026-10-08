@@ -23,13 +23,14 @@ class RateLimitServiceTest {
     @Mock private ValueOperations<String, String> values;
     @Mock private RateLimitConfigService rateLimitConfig;
     @Mock private UsageQuotaService usageQuota;
+    @Mock private QuotaExemptionService quotaExemptionService;
 
     @Test
     void eleventhQuestionIsBlockedAndDoesNotRecordAcceptedQuestion() {
         UsageQuotaProperties quotaProperties = new UsageQuotaProperties();
         quotaProperties.setChatDayMaxRequests(10);
         RateLimitService service = new RateLimitService(
-                redis, new RateLimitProperties(), rateLimitConfig, usageQuota, quotaProperties
+                redis, new RateLimitProperties(), rateLimitConfig, usageQuota, quotaProperties, quotaExemptionService
         );
         when(rateLimitConfig.getCurrentSettings()).thenReturn(new RateLimitConfigService.RateLimitSettingsView(
                 new RateLimitConfigService.WindowLimitView(30, 60), null, null, null, null
@@ -42,5 +43,20 @@ class RateLimitServiceTest {
 
         verify(values).decrement(startsWith("chat:day:user:42:"));
         verify(usageQuota, never()).recordChatRequest("42");
+    }
+
+    @Test
+    void adminQuestionSkipsDailyAndMinuteLimits() {
+        RateLimitService service = new RateLimitService(
+                redis, new RateLimitProperties(), rateLimitConfig, usageQuota,
+                new UsageQuotaProperties(), quotaExemptionService
+        );
+        when(quotaExemptionService.isExempt("1")).thenReturn(true);
+
+        service.checkChatByUser("1");
+        service.checkEmbeddingQueryByUser("1");
+
+        verify(redis, never()).opsForValue();
+        verify(usageQuota, never()).recordChatRequest("1");
     }
 }

@@ -30,11 +30,12 @@ public class QuotaConfiguration {
      */
     @Bean
     public UsageQuotaService usageQuotaService(StringRedisTemplate stringRedisTemplate,
-                                               UserTokenService userTokenService) {
+                                               UserTokenService userTokenService,
+                                               com.yizhaoqi.smartpai.service.QuotaExemptionService quotaExemptionService) {
         if (usageQuotaProperties.isUseUserTokenBalance()) {
-            return new UsageBalanceQuotaService(stringRedisTemplate, usageQuotaProperties, userTokenService);
+            return new UsageBalanceQuotaService(stringRedisTemplate, usageQuotaProperties, userTokenService, quotaExemptionService);
         } else {
-            return new UsageQuotaService(stringRedisTemplate, usageQuotaProperties);
+            return new UsageQuotaService(stringRedisTemplate, usageQuotaProperties, quotaExemptionService);
         }
     }
 

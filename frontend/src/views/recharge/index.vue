@@ -449,11 +449,11 @@ onMounted(() => {
 
 <style scoped>
 .pricing-page {
-  --price-ink: #253b31;
-  --price-muted: #758479;
-  --price-line: #dde6dd;
-  --price-card: #fff;
-  --price-accent: #167565;
+  --price-ink: #4c4840;
+  --price-muted: #898277;
+  --price-line: #d8d0c3;
+  --price-card: #f8f5ee;
+  --price-accent: #8c806e;
   padding: 28px 24px;
   overflow-y: auto;
   color: var(--price-ink);
@@ -468,7 +468,7 @@ onMounted(() => {
   position: absolute;
   inset: 90px 5% 60px;
   pointer-events: none;
-  background: radial-gradient(ellipse, #b4d8bd65, transparent 70%);
+  background: radial-gradient(ellipse, #d8cdb865, transparent 70%);
   z-index: 0;
 }
 .pricing-heading,
@@ -496,10 +496,10 @@ onMounted(() => {
 .pricing-heading h1 > span {
   display: inline-block;
   padding: 0 10px;
-  border: 1px dashed #86b59a;
-  background: #e4f0e4;
+  border: 1px dashed #b9aa92;
+  background: #eee8dc;
   border-radius: 10px;
-  color: #26765b;
+  color: #786d5c;
 }
 .pricing-heading > p {
   font-size: 13px;
@@ -532,8 +532,8 @@ onMounted(() => {
   font-size: 9px;
   padding: 2px 5px;
   border-radius: 8px;
-  background: #edf5ea;
-  color: #3d7155;
+  background: #ebe4d7;
+  color: #756a59;
   margin-left: 4px;
 }
 .switch-indicator {
@@ -543,8 +543,8 @@ onMounted(() => {
   bottom: 5px;
   width: calc((100% - 10px) / 2);
   border-radius: 30px;
-  background: linear-gradient(180deg, #298978, #167565);
-  box-shadow: 0 3px 7px #16756525;
+  background: linear-gradient(180deg, #a69a87, #8c806e);
+  box-shadow: 0 3px 7px #8c806e25;
   transition: transform 0.25s ease;
 }
 .switch-indicator.is-custom {
@@ -563,7 +563,7 @@ onMounted(() => {
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  background: #96aa98;
+  background: #aa9e8d;
 }
 .plans-grid {
   display: grid;
@@ -577,7 +577,7 @@ onMounted(() => {
   background: var(--price-card);
   border: 1px solid var(--price-line);
   border-radius: 18px;
-  box-shadow: 0 8px 24px #244a2910;
+  box-shadow: 0 8px 24px #5a4d3b10;
   animation: plan-reveal 0.45s ease both;
   animation-delay: var(--reveal-delay);
   transition:
@@ -585,14 +585,14 @@ onMounted(() => {
     box-shadow 0.2s;
 }
 .plan-card:hover {
-  border-color: #8db39c;
+  border-color: #b9aa92;
 }
 .plan-card.selected {
   border-color: var(--price-accent);
   box-shadow:
     0 0 0 1px var(--price-accent),
-    0 12px 35px #16756518;
-  background: #f1f7ef;
+    0 12px 35px #8c806e18;
+  background: #f1ece2;
 }
 .plan-top {
   display: flex;
@@ -607,14 +607,14 @@ onMounted(() => {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: #eef4eb;
-  border: 1px solid #e1eadc;
+  background: #eee8dd;
+  border: 1px solid #ded4c5;
   font-size: 12px;
-  color: #38745b;
+  color: #786d5c;
 }
 .plan-kind {
   font-size: 9px;
-  color: #9ba79c;
+  color: #a79d90;
   letter-spacing: 1px;
 }
 .selected-badge {
@@ -679,14 +679,14 @@ onMounted(() => {
   font-size: 12px;
 }
 .quota-icon {
-  color: #4f8061;
+  color: #81735f;
   font-size: 19px;
   width: 22px;
   text-align: center;
 }
 .plan-quotas small {
   display: block;
-  color: #8d9c90;
+  color: #9a9083;
   font-size: 9px;
   margin-top: 3px;
 }
@@ -727,9 +727,9 @@ onMounted(() => {
   height: 18px;
   font-size: 10px;
   border-radius: 50%;
-  border: 1px solid #a2c9ad;
-  color: #26765b;
-  background: #edf6e9;
+  border: 1px solid #c9baa5;
+  color: #786d5c;
+  background: #eee8dd;
 }
 .benefit-fallback {
   color: var(--price-muted);
@@ -766,7 +766,7 @@ onMounted(() => {
 }
 .custom-intro {
   padding: 32px;
-  background: #eaf2e6;
+  background: #ede7dc;
 }
 .custom-intro h2 {
   font-size: 23px;
@@ -785,7 +785,7 @@ onMounted(() => {
 .custom-intro li::before {
   content: '✓';
   margin-right: 10px;
-  color: #397d57;
+  color: #81735f;
 }
 .custom-form {
   padding: 32px;
@@ -827,28 +827,28 @@ onMounted(() => {
   gap: 18px;
 }
 .billing-switch button:focus-visible {
-  outline: 2px solid #5d9d7a;
+  outline: 2px solid #8c806e;
   outline-offset: 3px;
 }
 .dark .pricing-page {
-  --price-ink: #e6eee6;
-  --price-muted: #a4b6a9;
-  --price-line: #3b4d3f;
-  --price-card: #222c25;
-  --price-accent: #57a78f;
+  --price-ink: #e8e1d7;
+  --price-muted: #b5aa9a;
+  --price-line: #484138;
+  --price-card: #292824;
+  --price-accent: #c8b89e;
 }
 .dark .pricing-heading h1 > span {
-  background: #283e2f;
-  color: #a4d8b4;
+  background: #373129;
+  color: #c8b89e;
 }
 .dark .plan-card.selected {
-  background: #293e30;
+  background: #38332c;
 }
 .dark .pricing-section::before {
   opacity: 0.13;
 }
 .dark .custom-intro {
-  background: #2b3e30;
+  background: #39342d;
 }
 @keyframes plan-reveal {
   from {

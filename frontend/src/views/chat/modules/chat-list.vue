@@ -162,7 +162,7 @@ function useSuggestion(text: string) {
 .welcome-kicker > span {
   height: 5px;
   width: 5px;
-  background: #167565;
+  background: #8c806e;
   border-radius: 50%;
 }
 .welcome-logo {
@@ -179,7 +179,7 @@ function useSuggestion(text: string) {
   line-height: 1.5;
 }
 .knowledge-welcome h1 span {
-  color: #167565;
+  color: #8c806e;
 }
 .knowledge-welcome > p {
   color: #526559;
@@ -209,7 +209,7 @@ function useSuggestion(text: string) {
   transform: translateY(-3px);
 }
 .suggestion-card:focus-visible {
-  outline: 2px solid #167565;
+  outline: 2px solid #8c806e;
   outline-offset: 3px;
 }
 .suggestion-number {
@@ -237,7 +237,7 @@ function useSuggestion(text: string) {
   color: #526559;
 }
 .welcome-library:hover {
-  color: #167565;
+  color: #8c806e;
 }
 .dark .suggestion-card {
   background: #242c27;

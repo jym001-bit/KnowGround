@@ -28,9 +28,10 @@ public class UsageBalanceQuotaService extends UsageQuotaService {
 
     public UsageBalanceQuotaService(StringRedisTemplate stringRedisTemplate,
                                     UsageQuotaProperties properties,
-                                    UserTokenService userTokenService
+                                    UserTokenService userTokenService,
+                                    QuotaExemptionService quotaExemptionService
     ) {
-        super(stringRedisTemplate, properties);
+        super(stringRedisTemplate, properties, quotaExemptionService);
         this.userTokenService = userTokenService;
     }
 
@@ -191,7 +192,7 @@ public class UsageBalanceQuotaService extends UsageQuotaService {
     }
 
     private boolean isQuotaManaged(String userId) {
-        return userId != null && !userId.isBlank() && !userId.startsWith("system");
+        return userId != null && !userId.isBlank() && !quotaExemptionService.isExempt(userId);
     }
 
 

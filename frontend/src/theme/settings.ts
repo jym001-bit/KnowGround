@@ -1,10 +1,10 @@
 /** Default theme settings */
 export const themeSettings: App.Theme.ThemeSetting = {
-  themeScheme: 'auto',
+  themeScheme: 'light',
   grayscale: false,
   colourWeakness: false,
   recommendColor: true,
-  themeColor: '#167565',
+  themeColor: '#8C806E',
   otherColor: { info: '#2080f0', success: '#52c41a', warning: '#faad14', error: '#f5222d' },
   isInfoFollowPrimary: true,
   resetCacheStrategy: 'close',
@@ -26,15 +26,15 @@ export const themeSettings: App.Theme.ThemeSetting = {
   tokens: {
     light: {
       colors: {
-        container: 'rgb(255, 255, 255)',
-        layout: 'rgb(246, 247, 244)',
-        inverted: 'rgb(0, 20, 40)',
-        'base-text': 'rgb(31, 31, 31)'
+        container: 'rgb(248, 245, 238)',
+        layout: 'rgb(234, 229, 218)',
+        inverted: 'rgb(87, 81, 71)',
+        'base-text': 'rgb(69, 65, 58)'
       },
       boxShadow: {
-        header: '0 1px 2px rgb(0, 21, 41, 0.08)',
-        sider: '2px 0 8px 0 rgb(29, 35, 41, 0.05)',
-        tab: '0 1px 2px rgb(0, 21, 41, 0.08)'
+        header: '0 1px 2px rgb(82, 72, 54, 0.08)',
+        sider: '2px 0 8px 0 rgb(82, 72, 54, 0.05)',
+        tab: '0 1px 2px rgb(82, 72, 54, 0.08)'
       }
     },
     dark: { colors: { container: 'rgb(28, 28, 28)', layout: 'rgb(18, 18, 18)', 'base-text': 'rgb(224, 224, 224)' } }
@@ -47,6 +47,6 @@ export const themeSettings: App.Theme.ThemeSetting = {
  * If publish new version, use `overrideThemeSettings` to override certain theme settings
  */
 export const overrideThemeSettings: Partial<App.Theme.ThemeSetting> = {
-  themeColor: '#167565',
+  themeColor: '#8C806E',
   watermark: { visible: false, text: '知据 KnowGround' }
 };

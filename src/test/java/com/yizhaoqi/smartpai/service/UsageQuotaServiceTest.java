@@ -30,12 +30,15 @@ class UsageQuotaServiceTest {
 
     private UsageQuotaService usageQuotaService;
 
+    @Mock
+    private QuotaExemptionService quotaExemptionService;
+
     @BeforeEach
     void setUp() {
         UsageQuotaProperties properties = new UsageQuotaProperties();
         properties.getLlm().setDayMaxTokens(250);
         properties.getEmbedding().setDayMaxTokens(500);
-        usageQuotaService = new UsageQuotaService(stringRedisTemplate, properties);
+        usageQuotaService = new UsageQuotaService(stringRedisTemplate, properties, quotaExemptionService);
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(stringRedisTemplate.expire(anyString(), anyLong(), eq(TimeUnit.SECONDS))).thenReturn(true);
     }

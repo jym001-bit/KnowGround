@@ -73,9 +73,6 @@ public class DocumentService {
     private ElasticsearchService elasticsearchService;
 
     @Autowired
-    private OrgTagCacheService orgTagCacheService;
-
-    @Autowired
     private UserRepository userRepository;
 
     @Autowired
@@ -356,7 +353,7 @@ public class DocumentService {
     
     /**
      * 获取用户可访问的所有文件列表
-     * 包括用户自己的文件、公开文件和用户所属组织的文件（支持层级权限）
+     * 包括用户自己的文件和公开文件。非公开文件仅上传者可访问。
      *
      * @param userId 用户ID
      * @param orgTags 用户所属的组织标签（逗号分隔的字符串，仅供兼容性使用）
@@ -371,20 +368,7 @@ public class DocumentService {
             User user = resolveUser(userId);
             String userDbId = String.valueOf(user.getId());
             
-            List<String> userEffectiveTags = orgTagCacheService.getUserEffectiveOrgTags(user.getUsername());
-            logger.debug("用户有效组织标签: {}", userEffectiveTags);
-            
-            // 使用有效标签查询文件
-            List<FileUpload> files;
-            if (userEffectiveTags.isEmpty()) {
-                // 如果用户没有任何组织标签，只返回自己的文件和公开文件
-                files = fileUploadRepository.findByUserIdOrIsPublicTrue(userDbId);
-                logger.debug("用户无组织标签，仅返回个人和公开文件");
-            } else {
-                // 查询用户可访问的所有文件（考虑层级标签）
-                files = fileUploadRepository.findAccessibleFilesWithTags(userDbId, userEffectiveTags);
-                logger.debug("使用有效组织标签查询文件");
-            }
+            List<FileUpload> files = fileUploadRepository.findByUserIdOrIsPublicTrue(userDbId);
 
             files = deduplicateFileUploads(files);
             logger.info("成功获取用户可访问文件列表: userId={}, fileCount={}", userId, files.size());

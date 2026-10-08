@@ -14,18 +14,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * 组织标签授权过滤器
- * 用于实现基于组织标签的数据访问控制
- * 支持多级访问控制：
- * 1. 用户私人空间：仅资源创建者可访问
- * 2. 组织资源：组织成员可访问
- * 3. 公开资源：所有用户可访问
+ * 非公开文件仅资源创建者（以及管理员）可访问，公开文件对已认证用户开放。
  * 
  * 实现说明：
  * 本过滤器主要解决两类请求的授权需求：
@@ -39,8 +32,6 @@ import java.util.stream.Collectors;
 public class OrgTagAuthorizationFilter extends OncePerRequestFilter {
 
     private static final Logger logger = LoggerFactory.getLogger(OrgTagAuthorizationFilter.class);
-    private static final String DEFAULT_ORG_TAG = "DEFAULT"; // 默认组织标签
-    private static final String PRIVATE_TAG_PREFIX = "PRIVATE_"; // 私人组织标签前缀
 
     @Autowired
     private JwtUtils jwtUtils;
@@ -142,14 +133,8 @@ public class OrgTagAuthorizationFilter extends OncePerRequestFilter {
                 return;
             }
             
-            String resourceOrgTag = resourceInfo.getOrgTag();
-            
-            // 如果是公开资源、资源没有组织标签、或属于默认组织，直接放行
-            if (resourceInfo.isPublic() || 
-                resourceOrgTag == null || 
-                resourceOrgTag.isEmpty() || 
-                DEFAULT_ORG_TAG.equals(resourceOrgTag)) {
-                logger.debug("资源是公开的或无组织标签或属于默认组织，放行请求");
+            if (resourceInfo.isPublic()) {
+                logger.debug("资源公开，放行请求");
                 filterChain.doFilter(request, response);
                 return;
             }
@@ -163,11 +148,11 @@ public class OrgTagAuthorizationFilter extends OncePerRequestFilter {
             }
             
             // 获取用户名和角色
-            String username = jwtUtils.extractUsernameFromToken(token);
+            String requesterId = jwtUtils.extractUserIdFromToken(token);
             String role = jwtUtils.extractRoleFromToken(token);
             
             // 如果是资源拥有者，直接放行
-            if (username != null && username.equals(resourceInfo.getOwner())) {
+            if (requesterId != null && requesterId.equals(resourceInfo.getOwner())) {
                 logger.debug("用户是资源拥有者，放行请求");
                 filterChain.doFilter(request, response);
                 return;
@@ -180,30 +165,8 @@ public class OrgTagAuthorizationFilter extends OncePerRequestFilter {
                 return;
             }
             
-            // 检查是否为私人组织标签资源
-            if (resourceOrgTag.startsWith(PRIVATE_TAG_PREFIX)) {
-                // 私人标签资源只允许拥有者访问，此处已排除拥有者和管理员，拒绝访问
-                logger.debug("私人资源，且用户不是拥有者或管理员，拒绝访问");
-                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                return;
-            }
-            
-            // 获取用户的组织标签
-            String userOrgTags = jwtUtils.extractOrgTagsFromToken(token);
-            if (userOrgTags == null || userOrgTags.isEmpty()) {
-                logger.debug("用户没有组织标签，拒绝访问");
-                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                return;
-            }
-            
-            // 检查用户是否有权限访问该资源
-            if (isUserAuthorized(userOrgTags, resourceOrgTag)) {
-                logger.debug("用户有访问权限，放行请求");
-                filterChain.doFilter(request, response);
-            } else {
-                logger.debug("用户组织标签不匹配资源组织，拒绝访问");
-                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            }
+            logger.debug("非公开资源，用户不是拥有者，拒绝访问");
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         } catch (Exception e) {
             logger.error("组织标签授权过滤器发生错误: {}", e.getMessage(), e);
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
@@ -309,18 +272,6 @@ public class OrgTagAuthorizationFilter extends OncePerRequestFilter {
             return bearerToken.substring(7);
         }
         return null;
-    }
-    
-    /**
-     * 检查用户是否有权限访问该资源
-     */
-    private boolean isUserAuthorized(String userOrgTags, String resourceOrgTag) {
-        // 将用户的组织标签字符串转换为集合
-        Set<String> userTags = Arrays.stream(userOrgTags.split(","))
-                .collect(Collectors.toSet());
-        
-        // 检查用户的组织标签是否包含资源的组织标签
-        return userTags.contains(resourceOrgTag);
     }
     
     /**

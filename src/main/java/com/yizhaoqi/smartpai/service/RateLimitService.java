@@ -20,19 +20,22 @@ public class RateLimitService {
     private final RateLimitConfigService rateLimitConfigService;
     private final UsageQuotaService usageQuotaService;
     private final UsageQuotaProperties usageQuotaProperties;
+    private final QuotaExemptionService quotaExemptionService;
 
     public RateLimitService(
             StringRedisTemplate stringRedisTemplate,
             RateLimitProperties properties,
             RateLimitConfigService rateLimitConfigService,
             UsageQuotaService usageQuotaService,
-            UsageQuotaProperties usageQuotaProperties
+            UsageQuotaProperties usageQuotaProperties,
+            QuotaExemptionService quotaExemptionService
     ) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.properties = properties;
         this.rateLimitConfigService = rateLimitConfigService;
         this.usageQuotaService = usageQuotaService;
         this.usageQuotaProperties = usageQuotaProperties;
+        this.quotaExemptionService = quotaExemptionService;
     }
 
     public void checkRegisterByIp(String ip) {
@@ -44,6 +47,9 @@ public class RateLimitService {
     }
 
     public void checkChatByUser(String userId) {
+        if (quotaExemptionService.isExempt(userId)) {
+            return;
+        }
         RateLimitConfigService.WindowLimitView limit = rateLimitConfigService.getCurrentSettings().chatMessage();
         checkSingleWindow("chat:user:" + userId, limit.max(), limit.windowSeconds(), "聊天请求过于频繁");
         checkDailyChatLimit(userId);
@@ -81,6 +87,9 @@ public class RateLimitService {
             int estimatedPromptTokens,
             int maxCompletionTokens
     ) {
+        if (quotaExemptionService.isExempt(userId)) {
+            return UsageQuotaService.TokenReservationBundle.noop("llm", userId);
+        }
         RateLimitConfigService.TokenBudgetView limit = rateLimitConfigService.getCurrentSettings().llmGlobalToken();
         return usageQuotaService.reserveLlmTokensWithGlobalBudget(
                 userId,
@@ -94,12 +103,18 @@ public class RateLimitService {
     }
 
     public void checkEmbeddingQueryByUser(String userId) {
+        if (quotaExemptionService.isExempt(userId)) {
+            return;
+        }
         RateLimitConfigService.DualWindowLimitView limit = rateLimitConfigService.getCurrentSettings().embeddingQueryRequest();
         checkSingleWindow("embedding:query:min:user:" + userId, limit.minuteMax(), limit.minuteWindowSeconds(), "Embedding查询过于频繁");
         checkSingleWindow("embedding:query:day:user:" + userId, limit.dayMax(), limit.dayWindowSeconds(), "Embedding查询当日次数已达上限");
     }
 
     public UsageQuotaService.TokenReservationBundle reserveEmbeddingUploadUsage(String userId, java.util.List<String> texts) {
+        if (quotaExemptionService.isExempt(userId)) {
+            return UsageQuotaService.TokenReservationBundle.noop("embedding-upload", userId);
+        }
         RateLimitConfigService.TokenBudgetView limit = rateLimitConfigService.getCurrentSettings().embeddingUploadToken();
         return usageQuotaService.reserveEmbeddingTokensWithGlobalBudget(
                 userId,
@@ -115,6 +130,9 @@ public class RateLimitService {
     }
 
     public UsageQuotaService.TokenReservationBundle reserveEmbeddingQueryUsage(String userId, java.util.List<String> texts) {
+        if (quotaExemptionService.isExempt(userId)) {
+            return UsageQuotaService.TokenReservationBundle.noop("embedding-query", userId);
+        }
         checkEmbeddingQueryByUser(userId);
         RateLimitConfigService.TokenBudgetView limit = rateLimitConfigService.getCurrentSettings().embeddingQueryGlobalToken();
         return usageQuotaService.reserveEmbeddingTokensWithGlobalBudget(

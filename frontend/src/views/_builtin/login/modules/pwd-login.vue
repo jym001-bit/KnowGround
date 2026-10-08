@@ -11,6 +11,8 @@ defineOptions({
   name: 'PwdLogin'
 });
 
+const emit = defineEmits<{ invalidCredentials: [] }>();
+
 const authStore = useAuthStore();
 const { toggleLoginModule } = useRouterPush();
 const { formRef, validate } = useNaiveForm();
@@ -51,6 +53,7 @@ async function handleSubmit() {
   const success = await authStore.login(model.userName, model.password);
 
   if (!success) {
+    if (authStore.invalidCredentials) emit('invalidCredentials');
     return;
   }
 
@@ -109,7 +112,7 @@ async function handleSubmit() {
       <NButton type="primary" size="large" block :loading="authStore.loginLoading" @click="handleSubmit">
         登录工作台 <span class="login-arrow">→</span>
       </NButton>
-      <NButton type="primary" size="large" block @click="toggleLoginModule('register')">
+      <NButton class="register-button" size="large" block @click="toggleLoginModule('register')">
         {{ $t(loginModuleRecord.register) }} <span class="login-arrow">→</span>
       </NButton>
     </div>
@@ -123,8 +126,8 @@ async function handleSubmit() {
   gap: 12px;
 }
 .login-actions :deep(.n-button) {
-  height: 44px;
-  color: #fff;
+  height: 48px;
+  color: #f8f5ee;
   font-size: 16px;
   font-weight: 500;
   transition:
@@ -134,11 +137,18 @@ async function handleSubmit() {
 .login-actions :deep(.n-button:hover),
 .login-actions :deep(.n-button:focus-visible),
 .login-actions :deep(.n-button:active) {
-  color: #fff;
+  color: #f8f5ee;
 }
 .login-actions :deep(.n-button:hover) {
   transform: translateY(-1px);
-  box-shadow: 0 8px 22px rgb(22 117 101 / 18%);
+  box-shadow: 0 8px 22px rgb(93 82 66 / 13%);
+}
+.login-actions :deep(.register-button),
+.login-actions :deep(.register-button:hover),
+.login-actions :deep(.register-button:focus-visible) {
+  color: #625b51;
+  background: #f8f5ee;
+  border: 1px solid #d8d0c3;
 }
 .login-arrow {
   margin-left: 12px;

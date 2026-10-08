@@ -18,6 +18,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ExtendWith(MockitoExtension.class)
 class UsageBalanceQuotaServiceTest {
@@ -25,6 +27,7 @@ class UsageBalanceQuotaServiceTest {
     @Mock private StringRedisTemplate redis;
     @Mock private ValueOperations<String, String> values;
     @Mock private UserTokenService userTokens;
+    @Mock private QuotaExemptionService quotaExemptionService;
 
     private UsageBalanceQuotaService quota;
 
@@ -32,12 +35,12 @@ class UsageBalanceQuotaServiceTest {
     void setUp() {
         UsageQuotaProperties properties = new UsageQuotaProperties();
         properties.getLlm().setDayMaxTokens(1_000);
-        quota = new UsageBalanceQuotaService(redis, properties, userTokens);
-        when(redis.opsForValue()).thenReturn(values);
+        quota = new UsageBalanceQuotaService(redis, properties, userTokens, quotaExemptionService);
     }
 
     @Test
     void balanceModeRejectsDailyTokenLimitBeforeCallingProvider() {
+        when(redis.opsForValue()).thenReturn(values);
         when(userTokens.hasEnoughLlmTokens("42", 1_100)).thenReturn(true);
         when(values.increment(anyString(), eq(1_100L))).thenReturn(1_100L);
         when(redis.expire(anyString(), anyLong(), eq(TimeUnit.SECONDS))).thenReturn(true);
@@ -49,6 +52,7 @@ class UsageBalanceQuotaServiceTest {
 
     @Test
     void balanceModeSettlesDailyUsageAndLifetimeBalance() {
+        when(redis.opsForValue()).thenReturn(values);
         when(userTokens.hasEnoughLlmTokens("42", 800)).thenReturn(true);
         when(values.increment(anyString(), eq(800L))).thenReturn(800L);
         when(redis.expire(anyString(), anyLong(), eq(TimeUnit.SECONDS))).thenReturn(true);
@@ -61,5 +65,17 @@ class UsageBalanceQuotaServiceTest {
 
         verify(values).increment(anyString(), eq(-200L));
         verify(userTokens).consumeLlmTokens("42", 600);
+    }
+
+    @Test
+    void adminDoesNotRequireOrConsumeTokenBalance() {
+        when(quotaExemptionService.isExempt("1")).thenReturn(true);
+
+        UsageQuotaService.TokenReservation reservation = quota.reserveLlmTokens("1", 100, 1000);
+        quota.settleReservation(reservation, 500);
+
+        assertTrue(reservation.noop());
+        verify(userTokens, never()).hasEnoughLlmTokens("1", 1100);
+        verify(userTokens, never()).consumeLlmTokens("1", 500);
     }
 }
