@@ -123,7 +123,7 @@ public class ChatHandler {
             responseFutures.put(finalGenerationId, responseFuture);
 
             // 2. 获取对话历史
-            List<Map<String, String>> history = getConversationHistory(conversationId);
+            List<Map<String, String>> history = getConversationHistory(userId, conversationId);
             logger.debug("获取到 {} 条历史对话", history.size());
 
             // 3. 异步执行 ReAct 决策循环：模型按需返回 tool_calls，避免在 WebSocket 处理线程上阻塞 90s+ 的工具流
@@ -581,10 +581,15 @@ public class ChatHandler {
         return conversationId;
     }
 
-    private List<Map<String, String>> getConversationHistory(String conversationId) {
+    private List<Map<String, String>> getConversationHistory(String userId, String conversationId) {
         List<Map<String, Object>> records = getConversationHistoryRecords(conversationId);
         List<Map<String, String>> history = new ArrayList<>();
         for (Map<String, Object> message : records) {
+            if ("assistant".equals(message.get("role"))
+                    && !conversationService.isReferenceMappingAccessible(
+                            Long.parseLong(userId), message.get("referenceMappings"))) {
+                continue;
+            }
             Map<String, String> normalized = new HashMap<>();
             normalized.put("role", String.valueOf(message.getOrDefault("role", "")));
             normalized.put("content", String.valueOf(message.getOrDefault("content", "")));

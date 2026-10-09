@@ -1,142 +1,131 @@
 # 知据 · KnowGround
 
-![知据项目图标](frontend/public/favicon.svg)
+> 把散落在文档里的知识，变成有出处、可核对的回答。
 
-知据是我在 PaiSmart 代码基础上学习和开发的 RAG 知识库项目。它把文档上传、解析、检索和对话串起来，让回答可以回溯到文档来源。仓库仍保留部分 `PaiSmart` / `smartpai` 运行标识；本文描述当前代码与已验证的运行状态。
+知据是一个基于 **RAG（检索增强生成）** 的知识工作台。上传文档后，它会解析内容、切分文本并建立搜索索引；提问时，系统先从有权限访问的资料中检索相关片段，再交给大模型生成回答，并展示引用来源。适合个人学习资料、项目文档和团队知识的整理与问答。
 
-![本地开发环境中的知据登录页](docs/images/login.png)
+项目在 PaiSmart 基础上持续开发，因此代码中仍保留部分 `smartpai` 包名和历史配置名称。本文按**当前仓库实际实现**介绍，不把规划中的功能写成已完成。
 
-> 上图截自本地开发环境的 `/#/login`，不含账号和业务数据。知据入口是 `https://jymcode.top/rag/`；服务器管理面板在 `https://jymcode.top/server/`。
+<p align="center">
+  <img src="docs/images/login.png" alt="当前运行版本的知据登录页：米白色双栏布局、知识角色动画与账号登录表单" width="900" />
+</p>
+<p align="center"><sub>登录页</sub></p>
 
-## 导航
+## 目录
 
-- [功能与页面](#功能与页面)
+- [功能与使用场景](#功能与使用场景)
+- [一次问答如何完成](#一次问答如何完成)
 - [系统架构](#系统架构)
 - [技术栈](#技术栈)
-- [本地开发](#本地开发)
-- [项目结构](#项目结构)
-- [云端部署与数据迁移](#云端部署与数据迁移)
-- [验证与排障](#验证与排障)
-- [项目来源](#项目来源)
+- [本地启动](#本地启动)
+- [第一次使用](#第一次使用)
+- [权限与用量](#权限与用量)
+- [部署和项目结构](#部署和项目结构)
+- [常见问题](#常见问题)
+- [项目状态与贡献](#项目状态与贡献)
 
-## 功能与页面
+## 功能与使用场景
 
-| 功能 | 当前代码中的实现 | 主要入口 |
+| 功能 | 用户能做什么 | 实现位置 |
 | --- | --- | --- |
-| 登录与权限 | Spring Security、JWT；注册模式支持开放、邀请码和关闭 | `AuthController`、`UserController`、登录页 |
-| 知识库 | 上传、文档管理、解析、分块、向量化和访问权限控制 | `UploadController`、`DocumentController`、知识库页 |
-| 检索问答 | 混合检索后调用模型生成回答，传递引用映射 | `HybridSearchService`、`ChatHandler`、聊天页 |
-| 对话历史 | 会话、消息和引用信息写入 MySQL | `ConversationService`、聊天历史页 |
-| 组织与管理 | 组织标签、用户、邀请码、模型提供方、额度与用量页面 | 管理相关控制器及 `frontend/src/views/` |
+| 文档知识库 | 上传、查看、预览和管理文档；处理完成后参与问答 | `frontend/src/views/knowledge-base/`、`DocumentService` |
+| 有来源的问答 | 提问、查看回答及其引用，点击来源核对原文 | `frontend/src/views/chat/`、`ChatHandler` |
+| 混合检索 | 同时利用语义相似度与文本匹配，并在检索后检查文件权限 | `HybridSearchService` |
+| 对话记录 | 保存会话与历史消息，继续已有话题 | `ConversationService`、`frontend/src/views/chat-history/` |
+| 用户与模型管理 | 账号、组织标签、模型配置和用量查看 | `frontend/src/views/` 对应页面 |
+| 用量控制 | 普通用户有赠送额度、每日提问次数和 Token 上限 | `UsageQuotaService` 等服务及环境配置 |
 
-这些功能能否完整使用，取决于数据库、队列、对象存储、检索服务和模型 API 是否配置正确。页面或类存在不等于整条业务链路已通过测试。
+当前可上传的文档扩展名由 `FileTypeValidationService` 控制，包含 `pdf`、`doc/docx`、`xls/xlsx`、`ppt/pptx`、`txt`、`md`、`html`、`csv` 等。不同格式的解析效果取决于原文件质量；扫描件还需要 OCR。图片、音视频、压缩包不能直接作为知识文档上传。
+
+一个典型场景：把项目说明和会议纪要上传到知识库，然后问“这个项目的部署步骤是什么？”知据会先找相关文本片段，再组织答案。**答案不是权威事实本身**；请通过引用回到原文核对，尤其是版本、日期和配置项。
+
+## 一次问答如何完成
+
+这条链路分为两段：文档先完成入库并建立索引，提问时再检索可访问的内容生成回答。
+
+<p align="center">
+  <img src="docs/images/rag-flow.svg" alt="知据 RAG 流程：文档经过上传、解析分块、向量化和索引；问题经过混合检索、权限复核后生成带来源的回答" width="1000" />
+</p>
+
+**入库阶段**：文件上传到 MinIO（云端使用兼容 S3 接口的 RustFS），元数据写入 MySQL。Kafka 消息驱动异步解析；后端抽取文字并分块，调用 Embedding 模型生成向量，把可检索内容写入 Elasticsearch。PDF 解析支持 LiteParse；OCR 是可选能力。文件上传成功与“已经可以检索”是两个不同状态。
+
+**问答阶段**：用户问题先生成查询向量。Elasticsearch 使用 KNN 向量召回和文本匹配，并执行 BM25 rescore；如果查询向量生成失败，代码会尝试纯文本检索。检索时按公开/本人私有过滤，返回结果前还会根据 MySQL 文件记录再次核对权限。随后 Agent 的知识库搜索工具把片段交给 LLM，回答可带引用编号、文件名及页码等信息。聊天通过 WebSocket 交互，历史记录保存在 MySQL。
+
+> **关于 rerank**：当前代码有 Elasticsearch 的 **BM25 rescore**，但没有独立的 Cross-Encoder / 专用 Rerank 模型。不要把两者混为一谈。
 
 ## 系统架构
 
-### 服务关系
+浏览器只连接知据的 API；后端再使用数据与状态、文档处理、检索与生成三组服务。
 
-```mermaid
-flowchart LR
-    U[浏览器] --> F[Vue 3 前端]
-    F -->|HTTP / WebSocket| B[Spring Boot 后端]
-    B --> M[(MySQL<br/>用户、文档元数据、聊天历史)]
-    B --> R[(Redis<br/>短期状态与上下文)]
-    B --> K[Kafka<br/>文件处理任务]
-    B --> O[(S3 兼容存储<br/>本机 MinIO / 云端 RustFS)]
-    B --> E[(Elasticsearch<br/>文本与向量索引)]
-    B --> D[DeepSeek API<br/>生成回答]
-    B --> A[Embedding API<br/>生成向量]
-    K --> W[后端消费者]
-    W --> O
-    W --> E
-    W --> A
-```
+<p align="center">
+  <img src="docs/images/architecture.svg" alt="知据系统架构：Vue 前端连接 Spring Boot API，后端依赖 MySQL 和 Redis、Kafka 和对象存储、Elasticsearch 和模型 API 三组服务" width="1000" />
+</p>
 
-### 上传与提问的两条链路
+| 组件 | 作用 | 本地默认访问方式 |
+| --- | --- | --- |
+| Vue 前端 | 登录、知识库、聊天与管理页面 | `http://localhost:9527` |
+| Spring Boot API | 认证、上传、检索、聊天、额度与权限 | `http://localhost:8081/api/v1` |
+| MySQL | 用户、文件元数据、文档分块、会话与业务记录 | `.env` 中的 `SPRING_DATASOURCE_URL` |
+| Redis | 临时状态、缓存及用量相关计数 | `SPRING_DATA_REDIS_HOST/PORT` |
+| Kafka | 文档处理的异步消息 | `SPRING_KAFKA_BOOTSTRAP_SERVERS` |
+| Elasticsearch | 文本与向量索引 | `ELASTICSEARCH_HOST/PORT` |
+| MinIO / RustFS | 原始文档对象存储 | `MINIO_ENDPOINT` |
+| 模型 API | LLM 回答与 Embedding 向量化 | `DEEPSEEK_*`、`EMBEDDING_*` |
 
-```mermaid
-flowchart TD
-    UP[上传文件] --> STORE[S3 兼容存储保存原文件]
-    STORE --> QUEUE[Kafka 异步任务]
-    QUEUE --> PARSE[解析、分块]
-    PARSE --> EMB[Embedding 向量化]
-    EMB --> INDEX[Elasticsearch 建索引]
-
-    Q[用户提问] --> ACL[按用户与组织权限检索]
-    ACL --> RETRIEVE[取回相关知识片段]
-    RETRIEVE --> LLM[DeepSeek 生成回答]
-    LLM --> REF[返回来源与引用预览]
-    REF --> HISTORY[MySQL 保存会话]
-```
-
-**数据分工：**MySQL 保存需要长期保留的业务数据和聊天历史；本机 MinIO、云端 RustFS 保存文件；Elasticsearch 保存可检索索引；Redis 用于短期状态，不应当作聊天历史的唯一存储。Kafka 承接异步任务。
+本地与云端的端口和地址**不是同一套**。云端由 Caddy 提供 HTTPS 静态页面和反向代理，基础设施服务在 Docker 私有网络内；具体映射见[云端部署手册](deployment/cloud/README.md)。
 
 ## 技术栈
 
-| 分类 | 版本或组件 | 在项目中的作用 | 配置/代码依据 |
-| --- | --- | --- | --- |
-| 后端 | Java 17 编译目标、云端 Java 21、Spring Boot 3.4.2、Maven | API、业务逻辑和 WebSocket | [`pom.xml`](pom.xml)、[`Dockerfile.api`](deployment/cloud/Dockerfile.api) |
-| 前端 | Vue 3、TypeScript、Vite 6、Naive UI、Pinia、Vue Router、UnoCSS、pnpm | 页面与状态管理 | [`frontend/package.json`](frontend/package.json) |
-| 数据库 | MySQL 8、Spring Data JPA | 用户、文档元数据、会话与记录 | [`application.yml`](src/main/resources/application.yml) |
-| 缓存/消息 | Redis、Spring Kafka、Apache Kafka | 短期生成状态与异步文件处理 | 后端配置和消费者代码 |
-| 搜索/文件 | 云端 Elasticsearch 8.10.4、RustFS；本机 MinIO | 混合检索、向量索引与原文件 | [`deployment/cloud/compose.yaml`](deployment/cloud/compose.yaml) |
-| 文档解析 | Apache Tika、PDF 处理代码、LiteParse `lit` | 文本提取和 PDF 解析 | `DocumentService`、`ParseService` |
-| AI | DeepSeek API、DashScope Embedding API | 回答生成与向量化 | `DeepSeekClient`、`EmbeddingClient` |
-| 安全 | Spring Security、JWT | 身份认证与访问控制 | `SecurityConfig` |
-
-部署镜像版本可能和 Maven 客户端依赖版本不同；以部署文件中实际镜像为准。Beszel 是独立的服务器监控软件，不参与 RAG 问答。
-
-## 本地开发
-
-### 环境要求
-
-| 工具/服务 | 建议版本或说明 |
+| 层 | 主要技术 |
 | --- | --- |
-| JDK | 17 |
-| Maven | 3.8.6 或更新 |
-| Node.js / pnpm | Node.js 18.20+、pnpm 8.7+ |
-| MySQL / Redis / Kafka / Elasticsearch / MinIO | 配置可用的本机或开发实例；Elasticsearch 示例镜像为 8.10.4 |
-| 模型服务 | 有效的 DeepSeek 与 Embedding API Key；没有 Key 时无法验证完整问答链路 |
-| PDF 解析 | 使用该功能时需让后端能执行 LiteParse 的 `lit` 命令 |
+| 前端 | Vue 3、TypeScript、Vite、Pinia、Naive UI |
+| 服务端 | Java 17、Spring Boot 3.4.2、Spring Security、Spring WebSocket |
+| 数据与队列 | MySQL 8、Redis、Kafka |
+| 搜索与存储 | Elasticsearch、MinIO；云端对象存储为 RustFS |
+| 文档处理 | Apache Tika、LiteParse；按需配置 OCR |
+| 模型接入 | DeepSeek 兼容接口、DashScope 兼容 Embedding 接口；可在模型配置页管理提供方 |
 
-### 1. 准备基础设施
+## 本地启动
 
-先确认 MySQL、Redis、Kafka、MinIO 和 Elasticsearch 可以从后端所在机器访问。仓库中的 [`docs/docker-compose.yaml`](docs/docker-compose.yaml) 是原有基础设施示例，带固定密码、对外映射端口和宿主机路径，**不能原样用于公网服务器**。本地使用也应先检查其端口、凭据、数据卷和 Elasticsearch 内存占用。
+### 1. 准备环境
 
-数据库名由 `SPRING_DATASOURCE_URL` 决定；示例文件中的库名和你本机现有库名可能不同，启动前保持一致。`docs/databases/ddl.sql` 可供查看原有表结构，但实际建表策略仍以当前 JPA 配置和迁移后的数据库状态为准。
+需要 JDK 17、Maven、Node.js **18.20+**、pnpm **8.7+**，以及可访问的 MySQL、Redis、Kafka、Elasticsearch、MinIO。还需要可用的 LLM 和 Embedding API Key 才能完整体验解析与问答。
+
+仓库提供开发用的 [`docs/docker-compose.yaml`](docs/docker-compose.yaml)，但它不是开箱即用的公网编排；请先检查其中端口、密码、卷和服务版本。也可以自行运行这些依赖。Redis/Kafka 如果部署在虚拟机里，`.env` 必须写宿主机**实际可达**的虚拟机地址，不能机械填写 `localhost`。作者当前本机环境的 Redis 与 Kafka 已启动；新使用者仍需按自己的环境配置。
 
 ### 2. 配置后端
 
-从 [`.env.example`](.env.example) 复制一份为仓库根目录 `.env`。Windows PowerShell 可以执行：
+在项目根目录复制 [`.env.example`](.env.example) 为 `.env`，填写环境变量。PowerShell 示例：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Linux/macOS 可以执行：
+Bash 示例：
 
 ```bash
 cp .env.example .env
 ```
 
-仓库中的 `DotenvEnvironmentPostProcessor` 会在从项目根目录启动后端时读取 `.env`。真实 `.env` 已被 `.gitignore` 排除，不能提交到仓库或发到聊天里。重点填写：
+至少核对下表中的变量；完整说明以 `.env.example` 为准。
 
-| 配置项 | 用途 | 常见问题 |
+| 分类 | 关键变量 | 说明 |
 | --- | --- | --- |
-| `SPRING_PROFILES_ACTIVE` | 本地通常为 `dev` | 选错 profile 会读到不同默认值 |
-| `SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD` | MySQL 连接 | 库名、账号或权限不匹配 |
-| `SPRING_DATA_REDIS_HOST`、`SPRING_KAFKA_BOOTSTRAP_SERVERS` | Redis 与 Kafka | 服务在虚拟机时不要误填 `localhost` |
-| `MINIO_ENDPOINT`、`MINIO_PUBLIC_URL`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY` | 原文件与下载地址 | 内外地址不一致可能影响签名 URL |
-| `ELASTICSEARCH_HOST`、`ELASTICSEARCH_SCHEME`、`ELASTICSEARCH_PASSWORD` | 检索连接 | HTTP/HTTPS 和证书配置不一致 |
-| `JWT_SECRET_KEY` | JWT 签名 | 必须提供有效的 Base64 密钥 |
-| `DEEPSEEK_API_KEY`、`EMBEDDING_API_KEY` | 模型调用 | 额度、模型名、向量维度需匹配 |
-| `FILE_PARSING_LITEPARSE_COMMAND` | PDF 解析命令 | 后端进程找不到 `lit` |
+| 数据库 | `SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD` | 指向已有且可写的 MySQL 数据库；示例库名为 `PaiSmart` |
+| Redis / Kafka | `SPRING_DATA_REDIS_*`、`SPRING_KAFKA_BOOTSTRAP_SERVERS` | 确保后端进程能连接到实际地址 |
+| 搜索 | `ELASTICSEARCH_*` | 配置主机、协议、账户及密码；生产环境不要开启不安全证书信任 |
+| 对象存储 | `MINIO_ENDPOINT`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY`、`MINIO_BUCKET_NAME` | 指向 MinIO 或 S3 兼容服务 |
+| 认证 | `JWT_SECRET_KEY` | 使用随机的 Base64 密钥；可通过 `openssl rand -base64 32` 生成 |
+| 模型 | `DEEPSEEK_API_KEY`、`EMBEDDING_API_KEY` | 需要各自的有效凭证；模型名称可在样例文件中调整 |
+| 注册 | `APP_AUTH_REGISTRATION_MODE` | `OPEN` 允许正常注册；也支持 `INVITE_ONLY`、`CLOSED` |
 
-前端使用 [`frontend/.env.test`](frontend/.env.test) 和 [`frontend/.env.prod`](frontend/.env.prod) 分别配置开发/生产接口地址。`pnpm dev` 走 `test` 模式，默认连接 `http://localhost:8081/api/v1`。
+**不要把 `.env`、云端 `.env.cloud`、真实 API Key、数据库备份或用户上传文件提交到 Git。** `.env.example` 是占位配置，并非真实凭证。
 
-### 3. 启动项目
+首次启动若需创建管理员，可暂时设置 `ADMIN_BOOTSTRAP_ENABLED=true` 并配置强密码；账号建好后改回 `false`，重启应用。普通用户在 `OPEN` 模式下可从注册页注册，不要求邀请码。
 
-后端通常由 IDE 直接运行；也可在仓库根目录运行：
+### 3. 启动后端与前端
+
+在项目根目录运行后端：
 
 ```bash
 mvn spring-boot:run
@@ -150,103 +139,68 @@ pnpm install
 pnpm dev
 ```
 
-| 地址 | 作用 |
-| --- | --- |
-| `http://localhost:9527/#/login` | 本地前端登录页 |
-| `http://localhost:9527/#/chat` | 聊天页，需登录 |
-| `http://localhost:9527/#/knowledge-base` | 知识库页，需登录 |
-| `http://localhost:8081/api/v1` | 后端 API 前缀 |
+浏览器访问 [`http://localhost:9527/#/login`](http://localhost:9527/#/login)。本地 Vite 开发配置默认连接 `http://localhost:8081/api/v1`；如果后端地址不同，修改 `frontend/.env.test` 的 `VITE_SERVICE_BASE_URL` 和 WebSocket 地址。
 
-登录后先做一次小文档上传与提问，验证 Kafka、MinIO、Embedding、Elasticsearch 和模型调用是否都通。只看到登录页不能说明 RAG 链路已正常。
+> Windows 用户注意：前后端需要分别保持运行。修改 Java 代码后需重新编译并重启后端；浏览器刷新不能替换仍占用 8081 端口的旧进程。
 
-### 日常开发命令
+## 第一次使用
 
-```bash
-# 修改 Java 后优先编译，让已有的 IDE 热部署加载最新代码
-mvn -q -DskipTests compile
+| 步骤 | 操作 | 应看到的结果 |
+| --- | --- | --- |
+| 1 | 注册或使用管理员账号登录 | 进入工作台 |
+| 2 | 在知识库上传一份可公开测试的 PDF、MD 或 TXT | 文件出现在列表中；等待解析状态完成 |
+| 3 | 打开知识问答，提出文档中有明确答案的问题 | 返回回答和相关来源；点击来源可查看原文 |
+| 4 | 查看聊天记录 | 刚才的会话可以继续打开 |
+| 5 | 用第二个账号测试私有文档 | 私有资料不应被其他账号通过检索读到 |
 
-# 需要验证后端行为时
-mvn test
+例如可以上传一份**不含真实密钥的测试文档**，写上“项目部署前先检查 MySQL、Redis、Kafka 和 Elasticsearch 的连接”，然后提问“部署前要检查哪些服务？”。这是操作示例，不是仓库内置数据，也不代表模型每次都会返回完全相同的措辞。
 
-# 在 frontend 目录中执行
-pnpm typecheck
-pnpm build
-```
+## 权限与用量
 
-本地开发时后端通常由 IDE 管理，不要仅为验证一处代码修改就先重启。前端开发服务器已运行时直接访问 `http://localhost:9527`。
+当前文件可见性按**公开**和**个人私有**区分：公开文件允许有权限的用户检索；私有文件只允许上传者通过知识问答访问。组织标签用于其他管理逻辑，**不等于组织内自动共享私有文件**。检索索引中的旧记录也要通过数据库权限再次复核。既有历史对话若引用了当前无权访问的资料，读取历史时会隐藏相关回答；这不会自动物理删除旧记录。
 
-## 项目结构
+`.env.example` 提供的公网试运行额度如下。实际运行值以部署环境变量为准。
+
+| 项目 | 新用户赠送 | 每日上限 |
+| --- | ---: | ---: |
+| 提问次数 | — | 10 次 |
+| LLM Token | 20,000 | 10,000 |
+| Embedding Token | 10,000 | 3,000 |
+
+赠送额度是初始余额，每日上限是当天消耗限制，两者不是一回事。管理员账号在当前实现中豁免这些日常使用限制；普通用户按配置计数。公网部署前请结合模型价格、并发和滥用风险重新评估这组默认值。
+
+## 部署和项目结构
+
+仓库提供 [Docker 云端部署手册](deployment/cloud/README.md)、[Compose 编排](deployment/cloud/compose.yaml) 和 [Dockerfile](deployment/cloud/Dockerfile.api)。云端示例使用 Caddy 提供 HTTPS 与反向代理，MySQL/Redis/Kafka/Elasticsearch 运行在容器私有网络，原文件放在 RustFS。部署前先准备 `.env.cloud`，检查域名、证书、端口、数据卷及密钥；不要照搬作者的服务器地址和数据迁移记录。
 
 ```text
 KnowGround/
-├── src/main/java/com/yizhaoqi/smartpai/  # 后端控制器、服务、消费者与模型客户端
-├── src/main/resources/                 # application*.yml 与静态资源
-├── frontend/src/views/                 # 聊天、历史、知识库和管理页面
-├── frontend/packages/                  # 前端工作区模块
-├── docs/                               # 数据库脚本和开发/部署记录
-├── deployment/server-console/          # 已部署的独立 VPS 管理面板资料
-├── .env.example                        # 本地配置样例
-├── .env.cloud.example                  # 云端配置样例，真实值不入库
-├── pom.xml                              # Maven 依赖
+├── frontend/                   # Vue 3 页面、组件和前端配置
+├── src/main/java/              # Spring Boot 后端
+├── src/main/resources/         # 应用配置与索引映射等资源
+├── src/test/                   # 后端测试
+├── docs/
+│   ├── images/                 # README 使用的截图和流程图
+│   ├── databases/              # 数据库脚本
+│   └── docker-compose.yaml     # 本地开发用依赖示例
+├── deployment/cloud/           # 云端 Compose、镜像与运维说明
+├── .env.example                # 本地配置模板
 └── README.md
 ```
 
-| 配置文件 | 用途 |
+## 常见问题
+
+| 现象 | 排查顺序 |
 | --- | --- |
-| [`application.yml`](src/main/resources/application.yml) | 通用配置与知据应用的回答规则 |
-| [`application-dev.yml`](src/main/resources/application-dev.yml) | 本地开发参数 |
-| [`application-docker.yml`](src/main/resources/application-docker.yml) | 容器环境参数 |
-| [`application-prod.yml`](src/main/resources/application-prod.yml) | 生产环境覆盖参数 |
-| [`AGENTS.md`](AGENTS.md) | 本仓库内 Codex 的工作约定；不属于应用的系统提示词 |
+| 登录请求 `ECONNREFUSED` | 确认 8081 后端已启动，检查 Vite 代理目标、MySQL 和 Redis 连接 |
+| 页面能开，但 AI 服务不可用 | 检查模型 API Key、模型名称、普通用户余额与每日额度、后端日志 |
+| 上传后搜不到文件 | 等待 Kafka 消费和解析完成；检查对象存储、Embedding、ES 索引及文档可见性 |
+| 其他账号搜到私有文档 | 确认实际运行的是最新后端；检查文件公开状态、历史对话与索引数据，避免只看前端显示 |
+| PDF 是扫描件却没有正文 | 配置 LiteParse/OCR；确认解析进程能访问所需命令和语言包 |
+| 改了后端代码却看不到变化 | 停止旧 Java 进程，重新启动；仅刷新浏览器不会更新 API |
 
-## 云端部署与数据迁移
+开发时建议按 **登录 → 上传 → 解析 → 检索 → 引用预览 → 历史记录** 的顺序检查整条链路。页面返回 200 不代表依赖、模型调用和文档权限都已验证。
 
-### 当前状态
+## 项目状态与贡献
 
-| 项目 | 状态 |
-| --- | --- |
-| Ubuntu VPS、SSH、Docker、Docker Compose、HTTPS | 已准备 |
-| 独立服务器管理面板与 Beszel 监控 | 已部署，见 [面板说明](deployment/server-console/README.md) |
-| 知据应用的云端 Compose、前后端镜像 | 已部署；入口为 [jymcode.top/rag/](https://jymcode.top/rag/)，[服务器 IP](https://23.252.124.29/) 仍可访问 |
-| MySQL、对象存储与检索索引 | 已复制 / 重建：15 张表、3 个文件、587 条检索文档；本机原数据保留 |
-| 新域名的登录与旧文档预览 | 已由用户在浏览器验证；上传、问答与引用仍需逐项验收 |
-
-云端编排使用 [`deployment/cloud/compose.yaml`](deployment/cloud/compose.yaml)，运维与回退命令见 [云端运行手册](deployment/cloud/README.md)。现有 [`docs/docker-compose.yaml`](docs/docker-compose.yaml) 是旧开发示例，不能用于当前 VPS。
-
-### 本次部署顺序
-
-1. 从本机只读导出 MySQL 与 MinIO 对象并校验 SHA-256；保留本机原件。
-2. 使用独立的 [`.env.cloud.example`](.env.cloud.example) 对应云端配置，启动 MySQL、Redis、Kafka、RustFS、Elasticsearch 和后端；只让 Caddy 暴露 HTTPS。
-3. 恢复 15 张表、3 个文件；本机 Elasticsearch 许可证过期，未修改本机许可证，而是从 MySQL 文本分块在云端重建 587 条索引。
-4. 在 `jymcode.top/rag/` 提供知据，在同一域名的 `/server/` 提供管理面板；验证首页、API 限制、真实文件预签名下载及容器健康。
-
-迁移采用**复制**：本机数据保留。云端只包含备份时间点的数据；本机后续新增内容不会自动同步。VPS 的 4 GB 内存对完整服务较紧张，需持续观察内存、swap 和磁盘。
-
-### 已验证与待验证
-
-| 项目 | 当前结果 |
-| --- | --- |
-| S3 兼容存储 | 云端使用仍在维护的 RustFS，后端保留 `MINIO_*` 配置名；合并对象和预签名下载已验证 |
-| Elasticsearch IK 插件 | 与 ES 8.10.4 一起打入镜像，587 条索引重建成功 |
-| `/api/v1/test/**` 和 `/api/v1/internal/ocr/**` | 已在公网 Caddy 返回 404 |
-| LiteParse `lit`、PDF 上传与异步解析 | 后端镜像已成功解析真实迁移 PDF；**网页上传链路待验收** |
-| 登录、问答、引用与历史 | 手机端已确认原账号登录、旧文档和历史可见；最近一次回答与引用映射已写入 MySQL，**页面展示和预览待确认** |
-
-## 验证与排障
-
-建议按“浏览器 → 后端 → 数据存储”逐层定位：
-
-| 现象 | 优先检查 |
-| --- | --- |
-| 前端打不开 | `9527` 开发端口、Vite 进程、浏览器控制台 |
-| 登录失败 | Network 中的响应、后端日志、MySQL 用户数据及 JWT 配置 |
-| 上传后一直不完成 | MinIO 对象、Kafka topic/消费者、解析任务日志 |
-| 聊天没有参考来源 | Elasticsearch 检索结果、权限过滤、引用映射与浏览器响应 |
-| 历史记录为空 | 浏览器请求/响应、后端会话服务、MySQL 记录；不要只看 Redis |
-| 云端网页正常但问答失败 | 容器健康、模型 API、Embedding API、ES、Kafka 和数据库连接 |
-
-完整验收路径为“登录 → 上传 → 解析与向量化 → 检索问答 → 引用预览 → 历史记录”。前后端都要确认实际请求和持久化数据，不以页面能打开作为上线完成标准。
-
-## 项目来源
-
-知据在 PaiSmart 项目基础上继续学习和开发，保留了部分上游类名与目录结构。本 README 只描述本仓库的真实实现与状态，不引用原项目的商业推广、招聘成果或他人的截图。仓库根目录的 [`LICENSE`](LICENSE) 是 Apache License 2.0；前端依赖和其他第三方组件各自遵循其许可证。
+知据仍在持续迭代。当前可以作为 RAG、Java 服务端与前端协作的学习项目；如果用于真实团队资料或公网服务，应先完成凭证隔离、备份恢复、权限回归、成本控制和全链路验收。欢迎通过 Issue 反馈可复现的问题，或提交聚焦单一改动的 Pull Request；附上触发步骤和相关日志会更容易定位。

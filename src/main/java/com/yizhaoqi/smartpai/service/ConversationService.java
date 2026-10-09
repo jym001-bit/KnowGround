@@ -5,9 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yizhaoqi.smartpai.exception.CustomException;
 import com.yizhaoqi.smartpai.model.Conversation;
 import com.yizhaoqi.smartpai.model.ConversationSession;
+import com.yizhaoqi.smartpai.model.FileUpload;
 import com.yizhaoqi.smartpai.model.User;
 import com.yizhaoqi.smartpai.repository.ConversationRepository;
 import com.yizhaoqi.smartpai.repository.ConversationSessionRepository;
+import com.yizhaoqi.smartpai.repository.FileUploadRepository;
 import com.yizhaoqi.smartpai.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,7 +28,9 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class ConversationService {
@@ -39,6 +43,9 @@ public class ConversationService {
 
     @Autowired
     private ConversationSessionRepository sessionRepository;
+
+    @Autowired
+    private FileUploadRepository fileUploadRepository;
 
     @Autowired
     private UserRepository userRepository;
@@ -127,6 +134,7 @@ public class ConversationService {
 
     public void ensureConversationSession(Long userId, String conversationId, String title) {
         if (sessionRepository.existsByConversationId(conversationId)) {
+            requireOwnedSession(userId, conversationId);
             return;
         }
 
@@ -142,9 +150,7 @@ public class ConversationService {
     }
 
     public void switchCurrentConversation(Long userId, String conversationId) {
-        if (!sessionRepository.existsByConversationId(conversationId)) {
-            throw new CustomException("对话不存在", HttpStatus.NOT_FOUND);
-        }
+        requireOwnedSession(userId, conversationId);
         String redisKey = "user:" + userId + ":current_conversation";
         redisTemplate.opsForValue().set(redisKey, conversationId, Duration.ofDays(7));
     }
@@ -158,18 +164,25 @@ public class ConversationService {
         });
     }
 
-    public void archiveConversationSession(String conversationId) {
-        ConversationSession session = sessionRepository.findByConversationId(conversationId)
-                .orElseThrow(() -> new CustomException("对话不存在", HttpStatus.NOT_FOUND));
+    public void archiveConversationSession(Long userId, String conversationId) {
+        ConversationSession session = requireOwnedSession(userId, conversationId);
         session.setStatus(ConversationSession.SessionStatus.ARCHIVED);
         sessionRepository.save(session);
     }
 
-    public void unarchiveConversationSession(String conversationId) {
-        ConversationSession session = sessionRepository.findByConversationId(conversationId)
-                .orElseThrow(() -> new CustomException("对话不存在", HttpStatus.NOT_FOUND));
+    public void unarchiveConversationSession(Long userId, String conversationId) {
+        ConversationSession session = requireOwnedSession(userId, conversationId);
         session.setStatus(ConversationSession.SessionStatus.ACTIVE);
         sessionRepository.save(session);
+    }
+
+    private ConversationSession requireOwnedSession(Long userId, String conversationId) {
+        ConversationSession session = sessionRepository.findByConversationId(conversationId)
+                .orElseThrow(() -> new CustomException("对话不存在", HttpStatus.NOT_FOUND));
+        if (userId == null || session.getUser() == null || !userId.equals(session.getUser().getId())) {
+            throw new CustomException("无权访问此对话", HttpStatus.FORBIDDEN);
+        }
+        return session;
     }
 
     private void touchSessionUpdatedAt(String conversationId) {
@@ -194,7 +207,8 @@ public class ConversationService {
 
     // ---- Message queries ----
 
-    public List<Map<String, Object>> getMessagesByConversationId(String conversationId) {
+    public List<Map<String, Object>> getMessagesByConversationId(Long userId, String conversationId) {
+        requireOwnedSession(userId, conversationId);
         List<Conversation> conversations = conversationRepository.findByConversationIdOrderByTimestampAsc(conversationId);
         return toMessageHistory(conversations, false);
     }
@@ -262,6 +276,8 @@ public class ConversationService {
                             ? conversation.getConversationId()
                             : String.valueOf(conversation.getId());
 
+                    Map<String, Map<String, Object>> references = parseReferenceMappings(conversation.getReferenceMappingsJson());
+                    boolean permitted = isReferenceMappingAccessible(conversation.getUser().getId(), references);
                     messages.add(buildMessage(
                             "user",
                             conversation.getQuestion(),
@@ -272,15 +288,44 @@ public class ConversationService {
                     ));
                     messages.add(buildMessage(
                             "assistant",
-                            conversation.getAnswer(),
+                            permitted ? conversation.getAnswer() : "这条历史回答引用了当前无权访问的资料，内容已隐藏。",
                             timestamp,
                             messageConversationId,
-                            parseReferenceMappings(conversation.getReferenceMappingsJson()),
+                            permitted ? references : null,
                             includeUsername ? conversation.getUser().getUsername() : null
                     ));
                 });
 
         return messages;
+    }
+
+    public boolean isReferenceMappingAccessible(Long userId, Object rawMappings) {
+        if (!(rawMappings instanceof Map<?, ?> mappings) || mappings.isEmpty()) {
+            return true;
+        }
+        if (userId == null) {
+            return false;
+        }
+        Set<String> fileMd5s = new java.util.HashSet<>();
+        for (Object value : mappings.values()) {
+            if (!(value instanceof Map<?, ?> detail)
+                    || !(detail.get("fileMd5") instanceof String md5)
+                    || md5.isBlank()) {
+                return false;
+            }
+            fileMd5s.add(md5);
+        }
+        try {
+            Set<String> visibleMd5s = fileUploadRepository.findByFileMd5In(new ArrayList<>(fileMd5s))
+                    .stream()
+                    .filter(file -> String.valueOf(userId).equals(file.getUserId()) || file.isPublic())
+                    .map(FileUpload::getFileMd5)
+                    .collect(Collectors.toSet());
+            return visibleMd5s.containsAll(fileMd5s);
+        } catch (Exception exception) {
+            logger.error("校验历史引用权限失败: userId={}", userId, exception);
+            return false;
+        }
     }
 
     private Map<String, Object> buildMessage(String role, String content, String timestamp, String conversationId,

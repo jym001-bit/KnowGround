@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily renewal check for KnowGround public IP HTTPS certificate
+
+[Timer]
+OnCalendar=*-*-* 03:45:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=knowground-ip-cert.service
+
+[Install]
+WantedBy=timers.target

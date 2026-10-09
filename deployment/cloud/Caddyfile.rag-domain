@@ -1,0 +1,42 @@
+# The apex domain leaves other paths available for future projects.
+jymcode.top {
+    encode zstd gzip
+
+    @rag_without_slash path /rag
+    redir @rag_without_slash /rag/ 308
+
+    handle /rag/api/* {
+        route {
+            @private_api path /rag/api/v1/test/* /rag/api/v1/internal/ocr/*
+            respond @private_api "Not Found" 404
+            uri strip_prefix /rag
+            reverse_proxy 127.0.0.1:18081
+        }
+    }
+
+    handle /rag/proxy-ws/* {
+        uri strip_prefix /rag/proxy-ws
+        reverse_proxy 127.0.0.1:18081
+    }
+
+    handle /rag/uploads/* {
+        route {
+            @non_read not method GET HEAD
+            respond @non_read "Method Not Allowed" 405
+            uri strip_prefix /rag
+            reverse_proxy 127.0.0.1:19000 {
+                header_up Host rustfs:9000
+            }
+        }
+    }
+
+    handle_path /rag/* {
+        root * /opt/knowground/frontend/dist-rag
+        try_files {path} /index.html
+        file_server
+    }
+
+    handle {
+        respond "Not Found" 404
+    }
+}

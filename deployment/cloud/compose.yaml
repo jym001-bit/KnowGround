@@ -1,0 +1,169 @@
+name: knowground
+
+services:
+  mysql:
+    image: mysql:8.0.43
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: smart
+      MYSQL_USER: smart
+      MYSQL_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?set in .env.cloud}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set in .env.cloud}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=128M
+    volumes:
+      - mysql-data:/var/lib/mysql
+    mem_limit: 448m
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --silent"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7.4.2
+    restart: unless-stopped
+    environment:
+      SPRING_DATA_REDIS_PASSWORD: ${SPRING_DATA_REDIS_PASSWORD:?set in .env.cloud}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$SPRING_DATA_REDIS_PASSWORD\""]
+    volumes:
+      - redis-data:/data
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$SPRING_DATA_REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+
+  kafka-volume-init:
+    image: busybox:1.36
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 1000:1000 /data"]
+    volumes:
+      - kafka-data:/data
+    restart: "no"
+
+  kafka:
+    image: apache/kafka:3.9.1
+    restart: unless-stopped
+    depends_on:
+      kafka-volume-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: CONTROLLER://:9093,PLAINTEXT://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx384m
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1"]
+      start_period: 90s
+      interval: 20s
+      timeout: 10s
+      retries: 8
+
+  rustfs-volume-init:
+    image: busybox:1.36
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 10001:10001 /data"]
+    volumes:
+      - rustfs-data:/data
+    restart: "no"
+
+  rustfs:
+    image: rustfs/rustfs:1.0.0
+    restart: unless-stopped
+    depends_on:
+      rustfs-volume-init:
+        condition: service_completed_successfully
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_ACCESS_KEY: ${MINIO_ACCESS_KEY:?set in .env.cloud}
+      RUSTFS_SECRET_KEY: ${MINIO_SECRET_KEY:?set in .env.cloud}
+    ports:
+      - "127.0.0.1:19000:9000"
+    volumes:
+      - rustfs-data:/data
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      start_period: 30s
+      interval: 15s
+      timeout: 5s
+      retries: 8
+
+  es:
+    build:
+      context: ./es
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      ELASTIC_PASSWORD: ${ELASTICSEARCH_PASSWORD:?set in .env.cloud}
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    mem_limit: 1152m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u \"elastic:$$ELASTIC_PASSWORD\" http://127.0.0.1:9200/_cluster/health >/dev/null"]
+      start_period: 90s
+      interval: 20s
+      timeout: 10s
+      retries: 8
+
+  api:
+    profiles: [app]
+    build:
+      context: ../..
+      dockerfile: deployment/cloud/Dockerfile.api
+    restart: unless-stopped
+    env_file:
+      - ../../.env.cloud
+    environment:
+      SPRING_PROFILES_ACTIVE: docker,prod
+      SERVER_PORT: "8081"
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx512m -XX:MaxDirectMemorySize=128m
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      es:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18081:8081"
+    mem_limit: 896m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/test.html').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+      start_period: 120s
+      interval: 20s
+      timeout: 5s
+      retries: 8
+
+volumes:
+  mysql-data:
+  redis-data:
+  kafka-data:
+  rustfs-data:
+  es-data:

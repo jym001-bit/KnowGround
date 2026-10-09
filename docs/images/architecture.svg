@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="title description">
+  <title id="title">知据系统架构</title>
+  <desc id="description">浏览器中的 Vue 前端连接 Spring Boot 服务；服务下方按数据状态、文档处理和检索生成三组展示 MySQL、Redis、Kafka、对象存储、Elasticsearch 与模型 API。</desc>
+  <defs>
+    <style>
+      .canvas { fill: #f3efe6; }
+      .card { fill: #fffdf8; stroke: #ddd5c8; stroke-width: 2; }
+      .service { fill: #e6ddcf; stroke: #cbbfad; stroke-width: 2; }
+      .rule { stroke: #b5a898; stroke-width: 2; fill: none; }
+      .ink { fill: #38352f; }
+      .soft { fill: #766f63; }
+      .accent { fill: #796b5a; }
+      .eyebrow { font: 700 18px 'Inter', 'Segoe UI', sans-serif; letter-spacing: 3px; }
+      .title { font: 700 42px 'Inter', 'Microsoft YaHei', sans-serif; }
+      .group { font: 700 23px 'Inter', 'Microsoft YaHei', sans-serif; }
+      .name { font: 700 32px 'Inter', 'Microsoft YaHei', sans-serif; }
+      .item { font: 600 27px 'Inter', 'Microsoft YaHei', sans-serif; }
+      .detail { font: 500 22px 'Inter', 'Microsoft YaHei', sans-serif; }
+      .number { font: 700 18px 'Inter', sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="700" rx="30" class="canvas" />
+  <text x="60" y="62" class="eyebrow soft">KNOWGROUND  /  ARCHITECTURE</text>
+  <text x="60" y="116" class="title ink">知据如何连接知识与回答</text>
+
+  <!-- Entry and application layer. -->
+  <rect x="60" y="166" width="486" height="150" rx="22" class="card" />
+  <circle cx="104" cy="211" r="18" fill="#e7dfd2" />
+  <text x="94" y="217" class="number accent">01</text>
+  <text x="139" y="222" class="name ink">Vue 前端</text>
+  <text x="93" y="272" class="detail soft">登录 · 知识库 · 问答 · 管理</text>
+
+  <path d="M559 241H628" class="rule" />
+  <path d="M616 230L630 241L616 252" class="rule" />
+
+  <rect x="654" y="166" width="486" height="150" rx="22" class="service" />
+  <circle cx="698" cy="211" r="18" fill="#d0c3b3" />
+  <text x="688" y="217" class="number ink">02</text>
+  <text x="734" y="222" class="name ink">Spring Boot API</text>
+  <text x="687" y="272" class="detail soft">认证 · 权限 · 检索 · WebSocket</text>
+
+  <!-- One clear branch from the API to three service families. -->
+  <path d="M897 316V350M244 350H956M244 350V379M600 350V379M956 350V379" class="rule" />
+  <circle cx="897" cy="350" r="5" class="accent" />
+
+  <rect x="60" y="390" width="348" height="238" rx="21" class="card" />
+  <rect x="426" y="390" width="348" height="238" rx="21" class="card" />
+  <rect x="792" y="390" width="348" height="238" rx="21" class="card" />
+
+  <text x="90" y="436" class="group accent">01  数据与状态</text>
+  <path d="M90 457H378" class="rule" />
+  <text x="90" y="500" class="item ink">MySQL</text>
+  <text x="90" y="529" class="detail soft">用户 · 文件 · 会话</text>
+  <text x="90" y="580" class="item ink">Redis</text>
+  <text x="90" y="609" class="detail soft">临时状态 · 用量计数</text>
+
+  <text x="456" y="436" class="group accent">02  文档处理</text>
+  <path d="M456 457H744" class="rule" />
+  <text x="456" y="500" class="item ink">Kafka</text>
+  <text x="456" y="529" class="detail soft">异步解析任务</text>
+  <text x="456" y="580" class="item ink">MinIO / RustFS</text>
+  <text x="456" y="609" class="detail soft">原始文档存储</text>
+
+  <text x="822" y="436" class="group accent">03  检索与生成</text>
+  <path d="M822 457H1110" class="rule" />
+  <text x="822" y="500" class="item ink">Elasticsearch</text>
+  <text x="822" y="529" class="detail soft">文本 · 向量索引</text>
+  <text x="822" y="580" class="item ink">模型 API</text>
+  <text x="822" y="609" class="detail soft">LLM · Embedding</text>
+</svg>

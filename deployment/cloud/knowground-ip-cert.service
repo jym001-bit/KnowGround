@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew KnowGround public IP HTTPS certificate
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/knowground-ip-cert-renew

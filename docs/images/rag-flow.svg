@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-labelledby="title description">
+  <title id="title">知据 RAG 处理流程</title>
+  <desc id="description">上方展示文档从上传到建立索引的四步入库流程；下方展示从用户提问到带原文来源的回答的四步问答流程。</desc>
+  <defs>
+    <style>
+      .canvas { fill: #f3efe6; }
+      .lane { fill: #fffdf8; stroke: #ddd5c8; stroke-width: 2; }
+      .ink { fill: #38352f; }
+      .soft { fill: #766f63; }
+      .accent { fill: #796b5a; }
+      .circle { fill: #e7dfd2; }
+      .circleFinal { fill: #796b5a; }
+      .connector { stroke: #baad9d; stroke-width: 3; fill: none; }
+      .eyebrow { font: 700 18px 'Inter', 'Segoe UI', sans-serif; letter-spacing: 3px; }
+      .title { font: 700 42px 'Inter', 'Microsoft YaHei', sans-serif; }
+      .laneTitle { font: 700 27px 'Inter', 'Microsoft YaHei', sans-serif; }
+      .step { font: 700 27px 'Inter', 'Microsoft YaHei', sans-serif; }
+      .detail { font: 500 21px 'Inter', 'Microsoft YaHei', sans-serif; }
+      .number { font: 700 21px 'Inter', sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="660" rx="30" class="canvas" />
+  <text x="60" y="62" class="eyebrow soft">KNOWGROUND  /  RAG WORKFLOW</text>
+  <text x="60" y="116" class="title ink">从一份文档，到有来源的回答</text>
+
+  <rect x="60" y="161" width="1080" height="204" rx="22" class="lane" />
+  <text x="91" y="207" class="laneTitle accent">文档入库</text>
+  <text x="998" y="207" class="detail soft">建立可检索资料</text>
+  <path d="M179 267H1010" class="connector" />
+  <circle cx="181" cy="267" r="25" class="circle" />
+  <circle cx="455" cy="267" r="25" class="circle" />
+  <circle cx="729" cy="267" r="25" class="circle" />
+  <circle cx="1003" cy="267" r="25" class="circleFinal" />
+  <text x="169" y="274" class="number ink">01</text>
+  <text x="443" y="274" class="number ink">02</text>
+  <text x="717" y="274" class="number ink">03</text>
+  <text x="991" y="274" class="number" fill="#fffdf8">04</text>
+  <text x="117" y="318" class="step ink">上传文档</text>
+  <text x="391" y="318" class="step ink">解析分块</text>
+  <text x="665" y="318" class="step ink">向量化</text>
+  <text x="939" y="318" class="step ink">建立索引</text>
+
+  <rect x="60" y="390" width="1080" height="204" rx="22" class="lane" />
+  <text x="91" y="436" class="laneTitle accent">检索问答</text>
+  <text x="998" y="436" class="detail soft">根据资料作答</text>
+  <path d="M179 496H1010" class="connector" />
+  <circle cx="181" cy="496" r="25" class="circle" />
+  <circle cx="455" cy="496" r="25" class="circle" />
+  <circle cx="729" cy="496" r="25" class="circle" />
+  <circle cx="1003" cy="496" r="25" class="circleFinal" />
+  <text x="169" y="503" class="number ink">01</text>
+  <text x="443" y="503" class="number ink">02</text>
+  <text x="717" y="503" class="number ink">03</text>
+  <text x="991" y="503" class="number" fill="#fffdf8">04</text>
+  <text x="117" y="547" class="step ink">提出问题</text>
+  <text x="391" y="547" class="step ink">混合检索</text>
+  <text x="665" y="547" class="step ink">权限复核</text>
+  <text x="939" y="547" class="step ink">回答溯源</text>
+</svg>
