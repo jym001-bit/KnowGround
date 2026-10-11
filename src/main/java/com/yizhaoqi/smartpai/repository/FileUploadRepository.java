@@ -61,6 +61,9 @@ public interface FileUploadRepository extends JpaRepository<FileUpload, Long> {
 
     List<FileUpload> findByFileMd5In(List<String> md5List);
 
+    @Query("select distinct f.fileMd5 from FileUpload f where f.searchSuppressed = true")
+    List<String> findSuppressedFileMd5s();
+
     @Transactional
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE FileUpload f SET f.status = :newStatus WHERE f.id = :id AND f.status = :currentStatus")

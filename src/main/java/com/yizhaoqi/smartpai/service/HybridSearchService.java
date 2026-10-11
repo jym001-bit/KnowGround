@@ -97,6 +97,7 @@ public class HybridSearchService {
             userDbId = getUserDbId(userId);
             logger.debug("用户 {} 的数据库ID: {}, 有效组织标签: {}", userId, userDbId, userEffectiveTags);
             permissionFilter = buildPermissionFilter(userDbId, userEffectiveTags);
+            permissionFilter = withSuppressedFilesExcluded(permissionFilter);
         } catch (Exception e) {
             logger.error("解析用户权限失败，拒绝搜索: userId={}", userId, e);
             return Collections.emptyList();
@@ -117,11 +118,11 @@ public class HybridSearchService {
     public List<SearchResult> search(String query, int topK) {
         logger.warn("使用了没有权限过滤的搜索方法，建议使用 searchWithPermission 方法");
         try {
-            return hybridSearch(query, "system", topK, null);
+            return hybridSearch(query, "system", topK, withSuppressedFilesExcluded(null));
         } catch (Exception e) {
             logger.error("混合搜索失败，降级为纯文本搜索", e);
             try {
-                return textOnlySearch(query, null, topK, null);
+                return textOnlySearch(query, withSuppressedFilesExcluded(null), topK, null);
             } catch (Exception fallbackError) {
                 logger.error("后备搜索也失败", fallbackError);
                 throw new RuntimeException("搜索完全失败", fallbackError);
@@ -282,6 +283,22 @@ public class HybridSearchService {
         }));
     }
 
+    private Query withSuppressedFilesExcluded(Query base) {
+        List<String> suppressed = fileUploadRepository.findSuppressedFileMd5s();
+        if (suppressed == null || suppressed.isEmpty()) {
+            return base;
+        }
+        return Query.of(q -> q.bool(b -> {
+            if (base != null) {
+                b.filter(base);
+            }
+            b.mustNot(n -> n.terms(t -> t.field("fileMd5")
+                    .terms(v -> v.value(suppressed.stream()
+                            .map(co.elastic.clients.elasticsearch._types.FieldValue::of).toList()))));
+            return b;
+        }));
+    }
+
     private List<SearchResult> safeTextOnlySearch(String query, Query filter, int topK, Double minScore) {
         try {
             return textOnlySearch(query, filter, topK, minScore);
@@ -432,6 +449,7 @@ public class HybridSearchService {
         for (SearchResult result : results) {
             files.getOrDefault(result.getFileMd5(), List.of()).stream()
                     .filter(file -> file.getUserId().equals(result.getUserId()))
+                    .filter(file -> !Boolean.TRUE.equals(file.getSearchSuppressed()))
                     .filter(file -> userDbId.equals(file.getUserId()) || file.isPublic()
                             || (file.getOrgTag() != null && tags.contains(file.getOrgTag())))
                     .findFirst().ifPresent(file -> {

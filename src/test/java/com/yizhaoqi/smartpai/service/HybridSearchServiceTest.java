@@ -108,6 +108,17 @@ class HybridSearchServiceTest {
     }
 
     @Test
+    void suppressedDocumentsAreExcludedFromBothRecallPaths() {
+        when(fileUploadRepository.findSuppressedFileMd5s()).thenReturn(List.of("old-md5"));
+        when(rerankClient.rerank(anyString(), anyList())).thenReturn(List.of());
+
+        service.searchWithPermission("port", "7", 5);
+
+        assertEquals(2, capturedRequests.size());
+        assertTrue(capturedRequests.stream().allMatch(request -> request.toString().contains("old-md5")));
+    }
+
+    @Test
     void topKCapsResultsEvenWhenAllPassThreshold() {
         when(rerankClient.rerank(anyString(), anyList())).thenReturn(List.of(
                 new RerankClient.RerankHit(0, 0.9),

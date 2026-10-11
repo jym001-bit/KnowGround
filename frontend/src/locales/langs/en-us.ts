@@ -166,6 +166,7 @@ const local: App.I18n.Schema = {
     'chat-history': 'Chat History',
     'invite-code': 'Invite Codes',
     'knowledge-base': 'Knowledge Base',
+    'document-conflicts': 'Document Conflicts',
     'model-provider': 'Model Providers',
     'org-tag': 'Organization Tag',
     'usage-monitor': 'Usage Monitor',
