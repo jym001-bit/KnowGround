@@ -26,6 +26,9 @@ public class DocumentVector {
     @Lob
     private String textContent;
 
+    @Column(name = "chunk_context", length = 1000)
+    private String chunkContext;
+
     @Column(name = "page_number")
     private Integer pageNumber;
 

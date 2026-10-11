@@ -2,9 +2,14 @@ package com.yizhaoqi.smartpai.service;
 
 import com.yizhaoqi.smartpai.entity.SearchResult;
 import com.yizhaoqi.smartpai.model.FileUpload;
+import com.yizhaoqi.smartpai.config.ContextualRetrievalProperties;
+import com.yizhaoqi.smartpai.config.HybridSearchProperties;
+import com.yizhaoqi.smartpai.client.EmbeddingClient;
+import com.yizhaoqi.smartpai.client.RerankClient;
+import com.yizhaoqi.smartpai.repository.UserRepository;
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.yizhaoqi.smartpai.repository.FileUploadRepository;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 
@@ -32,14 +37,16 @@ class HybridSearchServicePermissionTest {
         publicFile.setPublic(true);
         when(files.findByFileMd5In(anyList())).thenReturn(List.of(adminPrivate, ownPrivate, publicFile));
 
-        HybridSearchService service = new HybridSearchService();
-        ReflectionTestUtils.setField(service, "fileUploadRepository", files);
+        HybridSearchService service = new HybridSearchService(
+                mock(ElasticsearchClient.class), mock(EmbeddingClient.class), mock(RerankClient.class),
+                new HybridSearchProperties(), new ContextualRetrievalProperties(),
+                mock(UserRepository.class), mock(OrgTagCacheService.class), files, Runnable::run);
         List<SearchResult> hits = List.of(
-                new SearchResult("private-md5", 1, "admin 的面经", 1.0),
-                new SearchResult("own-md5", 1, "我的文档", 1.0),
-                new SearchResult("public-md5", 1, "公开资料", 1.0));
+                new SearchResult("private-md5", 1, "admin 的面经", 1.0, "1", "ORG_tag", false),
+                new SearchResult("own-md5", 1, "我的文档", 1.0, "2", null, false),
+                new SearchResult("public-md5", 1, "公开资料", 1.0, "1", null, true));
 
-        List<SearchResult> visible = service.retainAccessibleFiles(hits, "2");
+        List<SearchResult> visible = service.retainAccessibleFiles(hits, "2", List.of());
 
         assertEquals(List.of("own-md5", "public-md5"),
                 visible.stream().map(SearchResult::getFileMd5).toList());

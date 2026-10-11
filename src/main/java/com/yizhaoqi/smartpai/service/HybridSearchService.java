@@ -1,217 +1,347 @@
 package com.yizhaoqi.smartpai.service;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.yizhaoqi.smartpai.client.EmbeddingClient;
+import com.yizhaoqi.smartpai.client.RerankClient;
+import com.yizhaoqi.smartpai.config.ContextualRetrievalProperties;
+import com.yizhaoqi.smartpai.config.HybridSearchProperties;
 import com.yizhaoqi.smartpai.entity.EsDocument;
 import com.yizhaoqi.smartpai.entity.SearchResult;
-import com.yizhaoqi.smartpai.model.User;
 import com.yizhaoqi.smartpai.exception.CustomException;
-import com.yizhaoqi.smartpai.repository.UserRepository;
-import com.yizhaoqi.smartpai.repository.FileUploadRepository;
 import com.yizhaoqi.smartpai.model.FileUpload;
+import com.yizhaoqi.smartpai.model.User;
+import com.yizhaoqi.smartpai.repository.FileUploadRepository;
+import com.yizhaoqi.smartpai.repository.UserRepository;
+import com.yizhaoqi.smartpai.service.chunk.ContextualChunkText;
+import com.yizhaoqi.smartpai.service.search.RrfFusion;
+import com.yizhaoqi.smartpai.utils.RequestDeadline;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
-import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.ArrayList;
-import java.util.Set;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * 混合搜索服务，结合文本匹配和向量相似度搜索
- * 支持权限过滤，确保用户只能搜索其有权限访问的文档
+ * 混合搜索服务：BM25 与 KNN 两路独立并行召回 → RRF 融合 → rerank 精排 → 按分数阈值截断（topK 只是上限）。
+ * 两路召回都带权限过滤，确保用户只能搜到自己的、公开的、所属组织（含层级继承）的文档。
  */
 @Service
 public class HybridSearchService {
 
     private static final Logger logger = LoggerFactory.getLogger(HybridSearchService.class);
+    private static final String MODE_HYBRID = "HYBRID";
+    // rerank 关闭或失败时按 RRF 排序兜底；RRF 分数（约 1/61）与 rerank 分数（0~1）量纲不同，单独标记避免污染得分监控
+    private static final String MODE_HYBRID_RRF = "HYBRID_RRF";
+    private static final String MODE_TEXT_ONLY = "TEXT_ONLY";
+    private static final int ES_MAX_NUM_CANDIDATES = 10000;
+    private static final String KNOWLEDGE_INDEX = "knowledge_base";
+    private static final double TEXT_ONLY_MIN_SCORE = 0.3d;
+    static final String FIELD_TEXT = "textContent";
+    static final String FIELD_CHUNK_CONTEXT = "chunkContext";
 
-    @Autowired
-    private ElasticsearchClient esClient;
+    private final ElasticsearchClient esClient;
+    private final EmbeddingClient embeddingClient;
+    private final RerankClient rerankClient;
+    private final HybridSearchProperties properties;
+    private final ContextualRetrievalProperties contextualProperties;
+    private final UserRepository userRepository;
+    private final OrgTagCacheService orgTagCacheService;
+    private final FileUploadRepository fileUploadRepository;
+    private final Executor recallExecutor;
 
-    @Autowired
-    private EmbeddingClient embeddingClient;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private FileUploadRepository fileUploadRepository;
+    public HybridSearchService(ElasticsearchClient esClient,
+                               EmbeddingClient embeddingClient,
+                               RerankClient rerankClient,
+                               HybridSearchProperties properties,
+                               ContextualRetrievalProperties contextualProperties,
+                               UserRepository userRepository,
+                               OrgTagCacheService orgTagCacheService,
+                               FileUploadRepository fileUploadRepository,
+                               @Qualifier("searchRecallExecutor") Executor recallExecutor) {
+        this.esClient = esClient;
+        this.embeddingClient = embeddingClient;
+        this.rerankClient = rerankClient;
+        this.properties = properties;
+        this.contextualProperties = contextualProperties;
+        this.userRepository = userRepository;
+        this.orgTagCacheService = orgTagCacheService;
+        this.fileUploadRepository = fileUploadRepository;
+        this.recallExecutor = recallExecutor;
+    }
 
     /**
-     * 使用文本匹配和向量相似度进行混合搜索，支持权限过滤
-     * 该方法确保用户只能搜索自己的文档和公开文档。
-     *
-     * @param query  查询字符串
-     * @param userId 用户ID
-     * @param topK   返回结果数量
-     * @return 搜索结果列表
+     * 带权限过滤的混合搜索（自己的文档、公开文档、所属组织及其上级组织的文档）
      */
     public List<SearchResult> searchWithPermission(String query, String userId, int topK) {
         logger.debug("开始带权限搜索，查询: {}, 用户ID: {}", query, userId);
-        
+        Query permissionFilter;
+        String userDbId;
+        List<String> userEffectiveTags;
         try {
-            // 获取用户的数据库ID用于权限过滤
-            String userDbId = getUserDbId(userId);
-            logger.debug("用户 {} 的数据库ID: {}", userId, userDbId);
-
-            // 生成查询向量 ，用户的问题向量化
-            final List<Float> queryVector = embedToVectorList(query, userId);
-
-            // 如果向量生成失败，仅使用文本匹配
-            if (queryVector == null) {
-                logger.warn("向量生成失败，仅使用文本匹配进行搜索");
-                return textOnlySearchWithPermission(query, userDbId, topK);
-            }
-
-            logger.debug("向量生成成功，开始执行混合搜索 KNN");
-
-            SearchResponse<EsDocument> response = esClient.search(s -> {
-                        s.index("knowledge_base");
-                        // KNN 召回
-                        int recallK = topK * 30; // KNN 召回窗口
-                        s.knn(kn -> kn
-                                .field("vector")
-                                .queryVector(queryVector)
-                                .k(recallK)
-                                .numCandidates(recallK)
-                                .filter(privateDocumentFilter(userDbId))
-                        );
-                        // 文本召回与向量召回分别应用相同的权限条件
-                        s.query(q -> q.bool(b -> b
-                                .must(mst -> mst.match(m -> m.field("textContent").query(query)))
-                                .filter(privateDocumentFilter(userDbId))
-                        ));
-
-                        // 第二阶段 BM25 rescore
-                        s.rescore(r -> r
-                                .windowSize(recallK)
-                                .query(rq -> rq
-                                        .queryWeight(0.2d)               // 保留部分 KNN 分
-                                        .rescoreQueryWeight(1.0d)        // BM25 主导
-                                        .query(rqq -> rqq.match(m -> m
-                                                .field("textContent")
-                                                .query(query)
-                                                .operator(Operator.And)
-                                        ))
-                                )
-                        );
-                        s.size(topK);
-                        return s;
-                    }, EsDocument.class);
-
-            logger.debug("Elasticsearch查询执行完成，命中数量: {}, 最大分数: {}", 
-                response.hits().total().value(), response.hits().maxScore());
-
-            List<SearchResult> results = response.hits().hits().stream()
-                    .map(hit -> {
-                        assert hit.source() != null;
-                        logger.debug("搜索结果 - 文件: {}, 块: {}, 分数: {}, 内容: {}", 
-                            hit.source().getFileMd5(), hit.source().getChunkId(), hit.score(), 
-                            hit.source().getTextContent().substring(0, Math.min(50, hit.source().getTextContent().length())));
-                        return new SearchResult(
-                                hit.source().getFileMd5(),
-                                hit.source().getChunkId(),
-                                hit.source().getTextContent(),
-                                hit.score(),
-                                hit.source().getUserId(),
-                                hit.source().getOrgTag(),
-                                hit.source().isPublic(),
-                                null,
-                                hit.source().getPageNumber(),
-                                hit.source().getAnchorText(),
-                                "HYBRID",
-                                hit.source().getTextContent()
-                        );
-                    })
-                    .toList();
-
-            results = retainAccessibleFiles(results, userDbId);
-            logger.debug("返回搜索结果数量: {}", results.size());
-            attachFileNames(results, userDbId);
-            //添加文件名字
-            return results;
+            userEffectiveTags = getUserEffectiveOrgTags(userId);
+            userDbId = getUserDbId(userId);
+            logger.debug("用户 {} 的数据库ID: {}, 有效组织标签: {}", userId, userDbId, userEffectiveTags);
+            permissionFilter = buildPermissionFilter(userDbId, userEffectiveTags);
         } catch (Exception e) {
-            logger.error("带权限的搜索失败", e);
-            // 发生异常时尝试使用纯文本搜索作为后备方案
-            try {
-                logger.info("尝试使用纯文本搜索作为后备方案");
-                return textOnlySearchWithPermission(query, getUserDbId(userId), topK);
-            } catch (Exception fallbackError) {
-                logger.error("后备搜索也失败", fallbackError);
-                return Collections.emptyList();
-            }
+            logger.error("解析用户权限失败，拒绝搜索: userId={}", userId, e);
+            return Collections.emptyList();
+        }
+
+        try {
+            return retainAccessibleFiles(hybridSearch(query, userId, topK, permissionFilter), userDbId, userEffectiveTags);
+        } catch (Exception e) {
+            logger.error("带权限的混合搜索失败，降级为纯文本搜索", e);
+            return retainAccessibleFiles(safeTextOnlySearch(query, permissionFilter, topK, TEXT_ONLY_MIN_SCORE),
+                    userDbId, userEffectiveTags);
         }
     }
 
     /**
-     * 仅使用文本匹配的带权限搜索方法
+     * 原始搜索方法，不包含权限过滤，保留向后兼容性
      */
-    private List<SearchResult> textOnlySearchWithPermission(String query, String userDbId, int topK) {
+    public List<SearchResult> search(String query, int topK) {
+        logger.warn("使用了没有权限过滤的搜索方法，建议使用 searchWithPermission 方法");
         try {
-            logger.debug("开始执行纯文本搜索，用户数据库ID: {}", userDbId);
+            return hybridSearch(query, "system", topK, null);
+        } catch (Exception e) {
+            logger.error("混合搜索失败，降级为纯文本搜索", e);
+            try {
+                return textOnlySearch(query, null, topK, null);
+            } catch (Exception fallbackError) {
+                logger.error("后备搜索也失败", fallbackError);
+                throw new RuntimeException("搜索完全失败", fallbackError);
+            }
+        }
+    }
 
-            SearchResponse<EsDocument> response = esClient.search(s -> s
-                    .index("knowledge_base")
-                    .query(q -> q
-                            .bool(b -> b
-                                    // 匹配内容相关性,使用match先分词，适合搜素文章正文
-                                    .must(m -> m
-                                            .match(ma -> ma
-                                                    .field("textContent")
-                                                    .query(query)
-                                            )
-                                    )
-                                    .filter(privateDocumentFilter(userDbId))
-                            )
-                    )
-                    .minScore(0.3d)
-                    .size(topK),
-                    EsDocument.class
-            );
+    private List<SearchResult> hybridSearch(String query, String requesterId, int topK, Query filter) throws Exception {
+        List<Float> queryVector = embedToVectorList(query, requesterId);
+        if (queryVector == null) {
+            logger.warn("向量生成失败，仅使用文本匹配进行搜索");
+            return filter == null
+                    ? textOnlySearch(query, null, topK, null)
+                    : safeTextOnlySearch(query, filter, topK, TEXT_ONLY_MIN_SCORE);
+        }
 
-            logger.debug("纯文本查询执行完成，命中数量: {}, 最大分数: {}", 
-                response.hits().total().value(), response.hits().maxScore());
-                //转换成SearchResult
-            List<SearchResult> results = response.hits().hits().stream()
-                    .map(hit -> {
-                        assert hit.source() != null;
-                        logger.debug("纯文本搜索结果 - 文件: {}, 块: {}, 分数: {}, 内容: {}", 
-                            hit.source().getFileMd5(), hit.source().getChunkId(), hit.score(), 
-                            hit.source().getTextContent().substring(0, Math.min(50, hit.source().getTextContent().length())));
-                        return new SearchResult(
-                                hit.source().getFileMd5(),
-                                hit.source().getChunkId(),
-                                hit.source().getTextContent(),
-                                hit.score(),
-                                hit.source().getUserId(),
-                                hit.source().getOrgTag(),
-                                hit.source().isPublic(),
-                                null,
-                                hit.source().getPageNumber(),
-                                hit.source().getAnchorText(),
-                                "TEXT_ONLY",
-                                hit.source().getTextContent()
-                        );
-                    })
+        int window = recallWindow(topK);
+        CompletableFuture<List<Hit<EsDocument>>> bm25Future =
+                CompletableFuture.supplyAsync(() -> recall(buildBm25Request(query, filter, window)), recallExecutor);
+        CompletableFuture<List<Hit<EsDocument>>> knnFuture =
+                CompletableFuture.supplyAsync(() -> recall(buildKnnRequest(queryVector, filter, window)), recallExecutor);
+        // 等待时间取召回超时配置和问答请求剩余时间中较小的值
+        Duration recallTimeout = RequestDeadline.cap(Duration.ofSeconds(properties.getRecallTimeoutSeconds()));
+        CompletableFuture.allOf(bm25Future, knnFuture).get(recallTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        List<Hit<EsDocument>> bm25Hits = bm25Future.join();
+        List<Hit<EsDocument>> knnHits = knnFuture.join();
+
+        List<RrfFusion.Fused<Hit<EsDocument>>> fused =
+                RrfFusion.fuse(properties.getRrfK(), Hit::id, bm25Hits, knnHits);
+        logger.debug("双路召回完成: window={}, bm25={}, knn={}, fused={}", window, bm25Hits.size(), knnHits.size(), fused.size());
+
+        List<SearchResult> results = rerankAndTruncate(query, fused, topK);
+        attachFileNames(results);
+        return results;
+    }
+
+    int recallWindow(int topK) {
+        long window = (long) Math.max(topK, 1) * Math.max(properties.getRecallMultiplier(), 1);
+        return (int) Math.max(topK, Math.min(window, properties.getMaxRecallWindow()));
+    }
+
+    private List<SearchResult> rerankAndTruncate(String query, List<RrfFusion.Fused<Hit<EsDocument>>> fused, int topK) {
+        HybridSearchProperties.Rerank cfg = properties.getRerank();
+        List<RrfFusion.Fused<Hit<EsDocument>>> candidates = fused.subList(0, Math.min(fused.size(), Math.max(cfg.getMaxCandidates(), topK)));
+        if (candidates.isEmpty()) {
+            return new ArrayList<>();
+        }
+        if (!cfg.isEnabled()) {
+            return rrfTopK(candidates, topK);
+        }
+        if (!RequestDeadline.hasAtLeast(Duration.ofMillis(cfg.getSkipBelowMillis()))) {
+            logger.info("问答请求剩余时间不足 {}ms，跳过 rerank，按 RRF 顺序返回", cfg.getSkipBelowMillis());
+            return rrfTopK(candidates, topK);
+        }
+
+        try {
+            // 上下文检索开启时 rerank 也看"说明 + 原文"，与 embedding / BM25 的索引文本一致
+            List<String> documents = candidates.stream()
+                    .map(c -> truncate(rerankText(c.item().source()), cfg.getMaxDocumentChars()))
                     .toList();
-
-            results = retainAccessibleFiles(results, userDbId);
-            logger.debug("返回纯文本搜索结果数量: {}", results.size());
-            attachFileNames(results, userDbId);
+            List<RerankClient.RerankHit> ranked = rerankClient.rerank(query, documents);
+            List<SearchResult> results = ranked.stream()
+                    .filter(hit -> hit.score() >= cfg.getScoreThreshold())
+                    .limit(topK)
+                    .map(hit -> toSearchResult(candidates.get(hit.index()).item().source(), hit.score(), MODE_HYBRID))
+                    .collect(Collectors.toCollection(ArrayList::new));
+            logger.debug("rerank 截断: candidates={}, 过阈值({})={}, 返回={}", candidates.size(), cfg.getScoreThreshold(),
+                    ranked.stream().filter(hit -> hit.score() >= cfg.getScoreThreshold()).count(), results.size());
             return results;
+        } catch (Exception e) {
+            logger.warn("rerank 调用失败，按 RRF 排名截取 topK: {}", e.getMessage());
+            return rrfTopK(candidates, topK);
+        }
+    }
+
+    private List<SearchResult> rrfTopK(List<RrfFusion.Fused<Hit<EsDocument>>> candidates, int topK) {
+        return candidates.stream()
+                .limit(topK)
+                .map(c -> toSearchResult(c.item().source(), c.score(), MODE_HYBRID_RRF))
+                .collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    private List<Hit<EsDocument>> recall(SearchRequest request) {
+        try {
+            SearchResponse<EsDocument> response = esClient.search(request, EsDocument.class);
+            return response.hits().hits().stream()
+                    .filter(hit -> hit.source() != null)
+                    .toList();
+        } catch (Exception e) {
+            throw new IllegalStateException("召回查询失败: " + e.getMessage(), e);
+        }
+    }
+
+    SearchRequest buildBm25Request(String query, Query filter, int window) {
+        return SearchRequest.of(s -> s
+                .index(KNOWLEDGE_INDEX)
+                .source(src -> src.filter(f -> f.excludes("vector")))
+                .query(q -> q.bool(b -> {
+                    b.must(keywordQuery(query));
+                    if (filter != null) {
+                        b.filter(filter);
+                    }
+                    return b;
+                }))
+                .size(window));
+    }
+
+    /**
+     * BM25 关键词查询。上下文检索开启时用 combined_fields 把 chunkContext 和 textContent 当成一个字段
+     * （BM25F），效果等同于对"说明 + 原文"的拼接文本打分，而原文字段仍保持干净，只用于展示和引用；
+     * 两个字段必须使用同一分词器（mapping 里都是 IK）。没有说明的旧分块只在 textContent 上匹配。
+     */
+    Query keywordQuery(String query) {
+        if (contextualProperties != null && contextualProperties.isEnabled()) {
+            return Query.of(q -> q.combinedFields(c -> c.query(query).fields(FIELD_CHUNK_CONTEXT, FIELD_TEXT)));
+        }
+        return Query.of(q -> q.match(m -> m.field(FIELD_TEXT).query(query)));
+    }
+
+    private String rerankText(EsDocument doc) {
+        boolean contextual = contextualProperties != null && contextualProperties.isEnabled();
+        return ContextualChunkText.compose(contextual ? doc.getChunkContext() : null, doc.getTextContent());
+    }
+
+    SearchRequest buildKnnRequest(List<Float> queryVector, Query filter, int window) {
+        long numCandidates = Math.min((long) window * Math.max(properties.getKnnNumCandidatesMultiplier(), 1), ES_MAX_NUM_CANDIDATES);
+        return SearchRequest.of(s -> s
+                .index(KNOWLEDGE_INDEX)
+                .source(src -> src.filter(f -> f.excludes("vector")))
+                .knn(kn -> {
+                    kn.field("vector")
+                            .queryVector(queryVector)
+                            .k(window)
+                            .numCandidates(Math.max(numCandidates, window));
+                    // 过滤放在 knn 内部做预过滤，保证返回的 k 条都是有权限的文档
+                    if (filter != null) {
+                        kn.filter(filter);
+                    }
+                    return kn;
+                })
+                .size(window));
+    }
+
+    /**
+     * 权限过滤：自己的文档 OR 公开文档 OR 组织标签命中（含层级继承后的有效标签）
+     */
+    public static Query buildPermissionFilter(String userDbId, List<String> userEffectiveTags) {
+        return Query.of(q -> q.bool(b -> {
+            b.should(s -> s.term(t -> t.field("userId").value(userDbId)));
+            b.should(s -> s.term(t -> t.field("public").value(true)));
+            if (userEffectiveTags != null && !userEffectiveTags.isEmpty()) {
+                b.should(s -> s.terms(t -> t.field("orgTag")
+                        .terms(tv -> tv.value(userEffectiveTags.stream()
+                                .map(co.elastic.clients.elasticsearch._types.FieldValue::of)
+                                .toList()))));
+            }
+            return b.minimumShouldMatch("1");
+        }));
+    }
+
+    private List<SearchResult> safeTextOnlySearch(String query, Query filter, int topK, Double minScore) {
+        try {
+            return textOnlySearch(query, filter, topK, minScore);
         } catch (Exception e) {
             logger.error("纯文本搜索失败", e);
             return new ArrayList<>();
         }
+    }
+
+    /**
+     * 纯文本（BM25）搜索，embedding 失败或混合检索异常时的降级方案
+     */
+    private List<SearchResult> textOnlySearch(String query, Query filter, int topK, Double minScore) throws Exception {
+        SearchRequest request = SearchRequest.of(s -> {
+            s.index(KNOWLEDGE_INDEX)
+                    .source(src -> src.filter(f -> f.excludes("vector")))
+                    .query(q -> q.bool(b -> {
+                        b.must(keywordQuery(query));
+                        if (filter != null) {
+                            b.filter(filter);
+                        }
+                        return b;
+                    }))
+                    .size(topK);
+            if (minScore != null) {
+                s.minScore(minScore);
+            }
+            return s;
+        });
+        List<SearchResult> results = esClient.search(request, EsDocument.class).hits().hits().stream()
+                .filter(hit -> hit.source() != null)
+                .map(hit -> toSearchResult(hit.source(), hit.score(), MODE_TEXT_ONLY))
+                .collect(Collectors.toCollection(ArrayList::new));
+        logger.debug("返回纯文本搜索结果数量: {}", results.size());
+        attachFileNames(results);
+        return results;
+    }
+
+    private SearchResult toSearchResult(EsDocument doc, Double score, String mode) {
+        return new SearchResult(
+                doc.getFileMd5(),
+                doc.getChunkId(),
+                doc.getTextContent(),
+                score,
+                doc.getUserId(),
+                doc.getOrgTag(),
+                doc.isPublic(),
+                null,
+                doc.getPageNumber(),
+                doc.getAnchorText(),
+                mode,
+                doc.getTextContent()
+        );
+    }
+
+    private static String truncate(String text, int maxChars) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() <= maxChars ? text : text.substring(0, maxChars);
     }
 
     /**
@@ -235,74 +365,80 @@ public class HybridSearchService {
             return null;
         }
     }
-    
+
+    /**
+     * 获取用户的有效组织标签（包含层级关系）
+     */
+    private List<String> getUserEffectiveOrgTags(String userId) {
+        try {
+            User user = findUser(userId);
+            return orgTagCacheService.getUserEffectiveOrgTags(user.getUsername());
+        } catch (Exception e) {
+            logger.error("获取用户有效组织标签失败: {}", e.getMessage(), e);
+            return Collections.emptyList();
+        }
+    }
+
     /**
      * 获取用户的数据库ID用于权限过滤
      */
     private String getUserDbId(String userId) {
-        logger.debug("获取用户数据库ID，用户ID: {}", userId);
         try {
-            // 获取用户名
-            User user;
-            try {
-                Long userIdLong = Long.parseLong(userId);
-                logger.debug("解析用户ID为Long: {}", userIdLong);
-                user = userRepository.findById(userIdLong)
-                    .orElseThrow(() -> new CustomException("User not found with ID: " + userId, HttpStatus.NOT_FOUND));
-                logger.debug("通过ID找到用户: {}", user.getUsername());
-                return userIdLong.toString(); // 如果输入已经是数字ID，直接返回
-            } catch (NumberFormatException e) {
-                // 如果userId不是数字格式，则假设它就是username
-                logger.debug("用户ID不是数字格式，作为用户名查找: {}", userId);
-                user = userRepository.findByUsername(userId)
-                    .orElseThrow(() -> new CustomException("User not found: " + userId, HttpStatus.NOT_FOUND));
-                logger.debug("通过用户名找到用户: {}, ID: {}", user.getUsername(), user.getId());
-                return user.getId().toString(); // 返回用户的数据库ID
-            }
+            return findUser(userId).getId().toString();
         } catch (Exception e) {
             logger.error("获取用户数据库ID失败: {}", e.getMessage(), e);
             throw new RuntimeException("获取用户数据库ID失败", e);
         }
     }
 
-    private Query privateDocumentFilter(String userDbId) {
-        return Query.of(q -> q.bool(b -> b
-                .should(s -> s.term(t -> t.field("userId").value(userDbId)))
-                .should(s -> s.term(t -> t.field("public").value(true)))
-                .minimumShouldMatch("1")));
-    }
-
-    // Elasticsearch 的索引可能滞后；返回正文前再按数据库中的最新可见性校验。
-    List<SearchResult> retainAccessibleFiles(List<SearchResult> results, String userDbId) {
-        if (results.isEmpty()) {
-            return results;
+    private User findUser(String userId) {
+        try {
+            Long userIdLong = Long.parseLong(userId);
+            return userRepository.findById(userIdLong)
+                    .orElseThrow(() -> new CustomException("User not found with ID: " + userId, HttpStatus.NOT_FOUND));
+        } catch (NumberFormatException e) {
+            // 如果userId不是数字格式，则假设它就是username
+            return userRepository.findByUsername(userId)
+                    .orElseThrow(() -> new CustomException("User not found: " + userId, HttpStatus.NOT_FOUND));
         }
-        Set<String> fileMd5s = results.stream().map(SearchResult::getFileMd5).collect(Collectors.toSet());
-        Set<String> accessibleMd5s = fileUploadRepository.findByFileMd5In(new ArrayList<>(fileMd5s))
-                .stream()
-                .filter(file -> userDbId.equals(file.getUserId()) || file.isPublic())
-                .map(FileUpload::getFileMd5)
-                .collect(Collectors.toSet());
-        return results.stream().filter(result -> accessibleMd5s.contains(result.getFileMd5())).toList();
     }
 
-    private void attachFileNames(List<SearchResult> results, String userDbId) {
+    private void attachFileNames(List<SearchResult> results) {
         if (results == null || results.isEmpty()) {
             return;
         }
         try {
-            // 收集所有唯一的 fileMd5
             Set<String> md5Set = results.stream()
                     .map(SearchResult::getFileMd5)
                     .collect(Collectors.toSet());
-            List<FileUpload> uploads = fileUploadRepository.findByFileMd5In(new java.util.ArrayList<>(md5Set));
+            List<FileUpload> uploads = fileUploadRepository.findByFileMd5In(new ArrayList<>(md5Set));
             Map<String, String> md5ToName = uploads.stream()
-                    .filter(file -> userDbId.equals(file.getUserId()) || file.isPublic())
                     .collect(Collectors.toMap(FileUpload::getFileMd5, FileUpload::getFileName, (existing, replacement) -> existing));
-            // 填充文件名
             results.forEach(r -> r.setFileName(md5ToName.get(r.getFileMd5())));
         } catch (Exception e) {
             logger.error("补充文件名失败", e);
         }
+    }
+
+    /** ES 权限字段可能滞后，再按 MySQL 中当前的文件可见性检查一次。 */
+    List<SearchResult> retainAccessibleFiles(List<SearchResult> results, String userDbId, List<String> tags) {
+        if (results.isEmpty()) {
+            return results;
+        }
+        Set<String> md5s = results.stream().map(SearchResult::getFileMd5).collect(Collectors.toSet());
+        Map<String, List<FileUpload>> files = fileUploadRepository.findByFileMd5In(new ArrayList<>(md5s))
+                .stream().collect(Collectors.groupingBy(FileUpload::getFileMd5));
+        List<SearchResult> accessible = new ArrayList<>();
+        for (SearchResult result : results) {
+            files.getOrDefault(result.getFileMd5(), List.of()).stream()
+                    .filter(file -> file.getUserId().equals(result.getUserId()))
+                    .filter(file -> userDbId.equals(file.getUserId()) || file.isPublic()
+                            || (file.getOrgTag() != null && tags.contains(file.getOrgTag())))
+                    .findFirst().ifPresent(file -> {
+                        result.setFileName(file.getFileName());
+                        accessible.add(result);
+                    });
+        }
+        return accessible;
     }
 }
