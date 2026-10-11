@@ -186,6 +186,15 @@ public class DocumentConflictService {
         return conflictRepository.findByStatusOrderByCreatedAtDesc(DocumentConflict.PENDING);
     }
 
+    public List<DocumentConflict> reviewed() {
+        return conflictRepository.findByStatusNotOrderByCreatedAtDesc(DocumentConflict.PENDING);
+    }
+
+    public DocumentConflict get(long id) {
+        return conflictRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("冲突记录不存在"));
+    }
+
     @Transactional
     public DocumentConflict decide(long id, String keepFileMd5, boolean dismiss, String adminId) {
         DocumentConflict conflict = conflictRepository.findForReview(id)

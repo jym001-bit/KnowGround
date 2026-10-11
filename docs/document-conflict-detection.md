@@ -8,11 +8,12 @@
 
 管理员用已有的 ADMIN JWT 调用：
 
-- `GET /api/v1/admin/document-conflicts`：列出待审核的候选（含双方 MD5、分块号、相似度、键和值）。
+- `GET /api/v1/admin/document-conflicts?status=PENDING|REVIEWED`：列出待审核或已处理的记录（含双方文档名、MD5、分块号、相似度、键和值）。
+- `GET /api/v1/admin/document-conflicts/{id}/context`：读取双方命中分块及相邻分块的原文。
 - `POST /api/v1/admin/document-conflicts/{id}/decision`，请求体 `{"keepFileMd5":"要保留的文档MD5"}`：保留一篇，并停止另一篇参与检索。
 - 同一个 POST 接口发送 `{"dismiss":true}`：驳回误报，两篇继续可检索。
 - `POST /api/v1/admin/document-conflicts/{id}/undo`：撤销一次审核。若该文档没有被其他冲突决策停用，重新允许检索。
 
-停用标记保存在 `file_upload.search_suppressed`。BM25 和 KNN 查询都在 ES 中排除被停用的 MD5，结果返回前再用 MySQL 状态检查一次，因此不必删除原文或重新生成向量。现阶段没有前端管理页面；管理员通过 API 审核。多个冲突涉及同一文档时，应综合查看所有记录后再决定；也可以通过撤销接口修正误判。
+这些接口返回前端通用的 `{code,message,data}` 响应。管理员可在前端“文档冲突审核”菜单（`/document-conflicts`）查看候选、展开原文、保留文档、驳回误报和撤销决定。停用标记保存在 `file_upload.search_suppressed`。BM25 和 KNN 查询都在 ES 中排除被停用的 MD5，结果返回前再用 MySQL 状态检查一次，因此不必删除原文或重新生成向量。多个冲突涉及同一文档时，应综合查看所有记录后再决定；也可以通过撤销接口修正误判。
 
 本地和当前生产配置的 `ddl-auto=update` 会添加新表与字段。若部署改用 `validate` 或关闭自动建表，先按 [`conflict_detection.sql`](databases/conflict_detection.sql) 迁移。上线前应在测试环境准备两份具有同名键、不同值且向量相近的文档，检查候选、管理员决定和检索排除；本地编译和单元测试不能替代这一集成验收。

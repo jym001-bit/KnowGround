@@ -22,6 +22,7 @@ declare module "@elegant-router/types" {
     "500": "/500";
     "chat": "/chat";
     "chat-history": "/chat-history";
+    "document-conflicts": "/document-conflicts";
     "iframe-page": "/iframe-page/:url";
     "invite-code": "/invite-code";
     "knowledge-base": "/knowledge-base";
@@ -69,6 +70,7 @@ declare module "@elegant-router/types" {
     | "500"
     | "chat"
     | "chat-history"
+    | "document-conflicts"
     | "iframe-page"
     | "invite-code"
     | "knowledge-base"
@@ -102,6 +104,7 @@ declare module "@elegant-router/types" {
     | "iframe-page"
     | "login"
     | "chat-history"
+    | "document-conflicts"
     | "chat"
     | "invite-code"
     | "knowledge-base"

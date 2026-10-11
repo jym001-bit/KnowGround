@@ -14,6 +14,8 @@ public interface DocumentConflictRepository extends JpaRepository<DocumentConfli
     Optional<DocumentConflict> findByPairKey(String pairKey);
     List<DocumentConflict> findByStatusOrderByCreatedAtDesc(String status);
 
+    List<DocumentConflict> findByStatusNotOrderByCreatedAtDesc(String status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from DocumentConflict c where c.id = :id")
     Optional<DocumentConflict> findForReview(@Param("id") Long id);

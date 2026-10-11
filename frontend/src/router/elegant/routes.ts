@@ -63,6 +63,18 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
+    name: 'document-conflicts',
+    path: '/document-conflicts',
+    component: 'layout.base$view.document-conflicts',
+    meta: {
+      title: 'document-conflicts',
+      i18nKey: 'route.document-conflicts',
+      icon: 'solar:documents-line-duotone',
+      roles: ['ADMIN'],
+      order: 4
+    }
+  },
+  {
     name: 'iframe-page',
     path: '/iframe-page/:url',
     component: 'layout.base$view.iframe-page',
