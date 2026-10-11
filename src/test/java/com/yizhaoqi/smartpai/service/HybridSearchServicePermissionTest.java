@@ -51,4 +51,23 @@ class HybridSearchServicePermissionTest {
         assertEquals(List.of("own-md5", "public-md5"),
                 visible.stream().map(SearchResult::getFileMd5).toList());
     }
+
+    @Test
+    void administratorSuppressedDocumentIsRemovedEvenIfIndexIsStale() {
+        FileUploadRepository files = mock(FileUploadRepository.class);
+        FileUpload suppressed = new FileUpload();
+        suppressed.setFileMd5("old");
+        suppressed.setUserId("2");
+        suppressed.setSearchSuppressed(true);
+        when(files.findByFileMd5In(anyList())).thenReturn(List.of(suppressed));
+        HybridSearchService service = new HybridSearchService(
+                mock(ElasticsearchClient.class), mock(EmbeddingClient.class), mock(RerankClient.class),
+                new HybridSearchProperties(), new ContextualRetrievalProperties(),
+                mock(UserRepository.class), mock(OrgTagCacheService.class), files, Runnable::run);
+
+        List<SearchResult> visible = service.retainAccessibleFiles(
+                List.of(new SearchResult("old", 1, "outdated", 1.0, "2", null, false)), "2", List.of());
+
+        assertEquals(List.of(), visible);
+    }
 }

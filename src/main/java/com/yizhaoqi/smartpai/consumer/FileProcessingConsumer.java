@@ -5,6 +5,7 @@ import com.yizhaoqi.smartpai.model.FileProcessingTask;
 import com.yizhaoqi.smartpai.service.DocumentService;
 import com.yizhaoqi.smartpai.service.ParseService;
 import com.yizhaoqi.smartpai.service.VectorizationService;
+import com.yizhaoqi.smartpai.service.conflict.DocumentConflictService;
 import io.minio.errors.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +25,7 @@ public class FileProcessingConsumer {
     private final ParseService parseService;
     private final VectorizationService vectorizationService;
     private final DocumentService documentService;
+    private final DocumentConflictService conflictService;
     @Autowired
     private KafkaConfig kafkaConfig;
 
@@ -31,11 +33,13 @@ public class FileProcessingConsumer {
     public FileProcessingConsumer(
             ParseService parseService,
             VectorizationService vectorizationService,
-            DocumentService documentService
+            DocumentService documentService,
+            DocumentConflictService conflictService
     ) {
         this.parseService = parseService;
         this.vectorizationService = vectorizationService;
         this.documentService = documentService;
+        this.conflictService = conflictService;
     }
 
     @KafkaListener(topics = "#{kafkaConfig.getFileProcessingTopic()}", groupId = "#{kafkaConfig.getFileProcessingGroupId()}")
@@ -79,6 +83,7 @@ public class FileProcessingConsumer {
                     task.getUserId()
             );
             documentService.markVectorizationCompleted(task.getFileMd5(), vectorizationResult);
+            conflictService.submit(task.getFileMd5(), task.getUserId());
             log.info("向量化完成，fileMd5: {}", task.getFileMd5());
         } catch (Exception e) {
             documentService.markVectorizationFailed(task.getFileMd5(), e);
@@ -103,6 +108,7 @@ public class FileProcessingConsumer {
                     ? task.getUserId()
                     : task.getRequesterId();
             documentService.reindexDocument(task.getFileMd5(), requesterId);
+            conflictService.submit(task.getFileMd5(), requesterId);
         } catch (Exception e) {
             documentService.markVectorizationFailed(task.getFileMd5(), e);
             log.error("Error reindexing task: {}", task, e);

@@ -169,6 +169,10 @@ aliyun:
     callback-token: ${ALIYUN_OCR_CALLBACK_TOKEN:}
 
 knowledge:
+  conflict-detection:
+    enabled: ${KNOWLEDGE_CONFLICT_DETECTION_ENABLED:true}
+    # 可选二次确认会消耗 LLM 额度；默认只做规则候选并交管理员审核。
+    llm-confirmation-enabled: ${KNOWLEDGE_CONFLICT_LLM_CONFIRMATION_ENABLED:false}
   bootstrap:
     enabled: ${KNOWLEDGE_BOOTSTRAP_ENABLED:true}
     path: ${KNOWLEDGE_BOOTSTRAP_PATH:docs/paismart.pdf}

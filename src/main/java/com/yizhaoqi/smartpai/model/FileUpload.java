@@ -15,7 +15,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(
         name = "file_upload",
-        uniqueConstraints = @UniqueConstraint(name = "uk_file_upload_md5_user", columnNames = {"file_md5", "user_id"})
+        uniqueConstraints = @UniqueConstraint(name = "uk_file_upload_md5_user", columnNames = {"file_md5", "user_id"}),
+        indexes = @Index(name = "idx_file_upload_search_suppressed", columnList = "search_suppressed")
 )
 public class FileUpload {
     public static final int STATUS_UPLOADING = 0;
@@ -93,6 +94,9 @@ public class FileUpload {
 
     @Column(name = "vectorization_error_message", length = 1000)
     private String vectorizationErrorMessage;
+
+    @Column(name = "search_suppressed")
+    private Boolean searchSuppressed = false;
 
     /**
      * 文件上传的创建时间

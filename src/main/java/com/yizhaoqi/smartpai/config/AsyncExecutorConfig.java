@@ -32,4 +32,17 @@ public class AsyncExecutorConfig {
         executor.initialize();
         return executor;
     }
+
+    @Bean(name = "conflictDetectionExecutor")
+    public ThreadPoolTaskExecutor conflictDetectionExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("conflict-detection-");
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(100);
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(10);
+        executor.initialize();
+        return executor;
+    }
 }
