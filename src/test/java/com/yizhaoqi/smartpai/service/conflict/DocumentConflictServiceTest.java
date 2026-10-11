@@ -35,7 +35,8 @@ class DocumentConflictServiceTest {
         conflicts = mock(DocumentConflictRepository.class);
         uploads = mock(FileUploadRepository.class);
         service = new DocumentConflictService(mock(ElasticsearchClient.class), conflicts, uploads,
-                mock(LlmProviderRouter.class), new ObjectMapper(), mock(ThreadPoolTaskExecutor.class), true, false);
+                mock(LlmProviderRouter.class), new ObjectMapper(), mock(ThreadPoolTaskExecutor.class), true,
+                mock(ConflictDetectionSettingsService.class));
         conflict = new DocumentConflict();
         conflict.setId(1L);
         conflict.setLeftFileMd5("left");

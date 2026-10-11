@@ -25,6 +25,23 @@ export interface ConflictContext {
   rightText: string;
 }
 
+export interface ConflictDetectionSettings {
+  detectionEnabled: boolean;
+  llmConfirmationEnabled: boolean;
+}
+
+export function fetchConflictDetectionSettings() {
+  return request<ConflictDetectionSettings>({ url: '/admin/document-conflicts/settings' });
+}
+
+export function updateConflictDetectionSettings(llmConfirmationEnabled: boolean) {
+  return request<ConflictDetectionSettings>({
+    url: '/admin/document-conflicts/settings',
+    method: 'put',
+    data: { llmConfirmationEnabled }
+  });
+}
+
 export function fetchDocumentConflicts(status: 'PENDING' | 'REVIEWED') {
   return request<DocumentConflict[]>({ url: '/admin/document-conflicts', params: { status } });
 }

@@ -6,6 +6,7 @@ import com.yizhaoqi.smartpai.model.FileUpload;
 import com.yizhaoqi.smartpai.repository.DocumentVectorRepository;
 import com.yizhaoqi.smartpai.repository.FileUploadRepository;
 import com.yizhaoqi.smartpai.service.conflict.DocumentConflictService;
+import com.yizhaoqi.smartpai.service.conflict.ConflictDetectionSettingsService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -21,7 +22,9 @@ class DocumentConflictAdminControllerTest {
     private final DocumentConflictService service = mock(DocumentConflictService.class);
     private final FileUploadRepository uploads = mock(FileUploadRepository.class);
     private final DocumentVectorRepository vectors = mock(DocumentVectorRepository.class);
-    private final DocumentConflictAdminController controller = new DocumentConflictAdminController(service, uploads, vectors);
+    private final ConflictDetectionSettingsService settings = mock(ConflictDetectionSettingsService.class);
+    private final DocumentConflictAdminController controller = new DocumentConflictAdminController(service, uploads,
+            vectors, settings);
 
     @Test
     void reviewedListReturnsFrontendEnvelopeWithDocumentNames() {
@@ -63,6 +66,18 @@ class DocumentConflictAdminControllerTest {
     void rejectsUnsupportedListStatus() {
         var error = assertThrows(ResponseStatusException.class, () -> controller.list("OTHER"));
         assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+    }
+
+    @Test
+    void updateSettingsRequiresExplicitBooleanAndAdminIdentity() {
+        var error = assertThrows(ResponseStatusException.class,
+                () -> controller.updateSettings(new DocumentConflictAdminController.UpdateSettings(null), "admin"));
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+
+        var expected = new ConflictDetectionSettingsService.SettingsView(true, true);
+        when(settings.setLlmConfirmationEnabled(true, "admin")).thenReturn(expected);
+        assertEquals(expected, controller.updateSettings(
+                new DocumentConflictAdminController.UpdateSettings(true), "admin").get("data"));
     }
 
     private static DocumentConflict conflict() {

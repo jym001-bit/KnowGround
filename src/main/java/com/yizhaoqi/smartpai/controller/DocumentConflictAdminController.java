@@ -5,10 +5,12 @@ import com.yizhaoqi.smartpai.model.FileUpload;
 import com.yizhaoqi.smartpai.repository.FileUploadRepository;
 import com.yizhaoqi.smartpai.repository.DocumentVectorRepository;
 import com.yizhaoqi.smartpai.service.conflict.DocumentConflictService;
+import com.yizhaoqi.smartpai.service.conflict.ConflictDetectionSettingsService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,12 +29,32 @@ public class DocumentConflictAdminController {
     private final DocumentConflictService service;
     private final FileUploadRepository fileUploadRepository;
     private final DocumentVectorRepository documentVectorRepository;
+    private final ConflictDetectionSettingsService settingsService;
 
     public DocumentConflictAdminController(DocumentConflictService service, FileUploadRepository fileUploadRepository,
-                                           DocumentVectorRepository documentVectorRepository) {
+                                           DocumentVectorRepository documentVectorRepository,
+                                           ConflictDetectionSettingsService settingsService) {
         this.service = service;
         this.fileUploadRepository = fileUploadRepository;
         this.documentVectorRepository = documentVectorRepository;
+        this.settingsService = settingsService;
+    }
+
+    @GetMapping("/settings")
+    public Map<String, Object> settings() {
+        return success(settingsService.getSettings());
+    }
+
+    @PutMapping("/settings")
+    public Map<String, Object> updateSettings(@RequestBody UpdateSettings request,
+                                               @RequestAttribute("userId") String adminId) {
+        if (request == null || request.llmConfirmationEnabled() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请指定是否启用 LLM 二次确认");
+        }
+        return success(settingsService.setLlmConfirmationEnabled(request.llmConfirmationEnabled(), adminId));
+    }
+
+    public record UpdateSettings(Boolean llmConfirmationEnabled) {
     }
 
     @GetMapping

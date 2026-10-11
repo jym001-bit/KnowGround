@@ -42,7 +42,7 @@ public class DocumentConflictService {
     private final ObjectMapper mapper;
     private final ThreadPoolTaskExecutor executor;
     private final boolean enabled;
-    private final boolean llmConfirmation;
+    private final ConflictDetectionSettingsService settingsService;
 
     public DocumentConflictService(ElasticsearchClient esClient,
                                    DocumentConflictRepository conflictRepository,
@@ -51,7 +51,7 @@ public class DocumentConflictService {
                                    ObjectMapper mapper,
                                    @Qualifier("conflictDetectionExecutor") ThreadPoolTaskExecutor executor,
                                    @Value("${knowledge.conflict-detection.enabled:true}") boolean enabled,
-                                   @Value("${knowledge.conflict-detection.llm-confirmation-enabled:false}") boolean llmConfirmation) {
+                                   ConflictDetectionSettingsService settingsService) {
         this.esClient = esClient;
         this.conflictRepository = conflictRepository;
         this.fileUploadRepository = fileUploadRepository;
@@ -59,7 +59,7 @@ public class DocumentConflictService {
         this.mapper = mapper;
         this.executor = executor;
         this.enabled = enabled;
-        this.llmConfirmation = llmConfirmation;
+        this.settingsService = settingsService;
     }
 
     /** Fire after indexing and status commit; detection failures never retry vectorization. */
@@ -81,6 +81,7 @@ public class DocumentConflictService {
     }
 
     public void detect(String fileMd5, String requesterId) throws Exception {
+        boolean llmConfirmation = settingsService.getSettings().llmConfirmationEnabled();
         esClient.indices().refresh(r -> r.index("knowledge_base"));
         int llmChecks = 0;
         for (int offset = 0; ; offset += MAX_CHUNKS) {
