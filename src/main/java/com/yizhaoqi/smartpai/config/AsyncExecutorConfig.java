@@ -19,4 +19,17 @@ public class AsyncExecutorConfig {
         executor.initialize();
         return executor;
     }
+
+    @Bean(name = "searchRecallExecutor")
+    public ThreadPoolTaskExecutor searchRecallExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("search-recall-");
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(16);
+        executor.setQueueCapacity(100);
+        executor.setAwaitTerminationSeconds(10);
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.initialize();
+        return executor;
+    }
 }

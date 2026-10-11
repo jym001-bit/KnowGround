@@ -6,6 +6,7 @@ import com.yizhaoqi.smartpai.entity.SearchResult;
 import com.yizhaoqi.smartpai.repository.FileUploadRepository;
 import com.yizhaoqi.smartpai.service.AgentToolRegistry;
 import com.yizhaoqi.smartpai.service.HybridSearchService;
+import com.yizhaoqi.smartpai.service.search.ParentContextExpander;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,8 +34,10 @@ class ZhijuRagToolTest {
     void setUp() {
         search = mock(HybridSearchService.class);
         model = mock(DeepSeekClient.class);
+        ParentContextExpander expander = mock(ParentContextExpander.class);
+        when(expander.expand(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         registry = new AgentToolRegistry(search, model, mock(StringRedisTemplate.class),
-                mock(ElasticsearchClient.class), mock(FileUploadRepository.class));
+                mock(ElasticsearchClient.class), mock(FileUploadRepository.class), expander);
     }
 
     @Test
@@ -116,6 +119,21 @@ class ZhijuRagToolTest {
         var result = registry.executeTool("search_knowledge", Map.of("query", "引用"), "42");
         assertTrue(result.content().contains("实际命中的片段"));
         assertFalse(result.content().contains("外围扩展文本"));
+    }
+
+    @Test
+    @DisplayName("父块交给模型，引用数据仍保留命中的小分块")
+    void parentContextDoesNotReplaceReferenceEvidence() {
+        SearchResult source = source("Redis 保存短期会话。", 2)
+                .withParentContext("前文：会话架构。\nRedis 保存短期会话。\n后文：MySQL 保存长期历史。", "fixture-md5#1-3");
+        when(search.searchWithPermission("会话历史", "42", 5)).thenReturn(List.of(source));
+
+        var result = registry.executeTool("search_knowledge", Map.of("query", "会话历史"), "42");
+
+        assertTrue(result.content().contains("MySQL 保存长期历史"));
+        SearchResult evidence = ((List<SearchResult>) result.data().get("results")).get(0);
+        assertEquals("Redis 保存短期会话。", evidence.getMatchedChunkText());
+        assertEquals(2, evidence.getPageNumber());
     }
 
     @Test

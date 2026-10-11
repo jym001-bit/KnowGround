@@ -33,6 +33,9 @@ public class EsIndexInitializer implements CommandLineRunner {
     @Autowired
     private ElasticsearchClient esClient;
 
+    @Autowired
+    private ContextualRetrievalProperties contextualRetrievalProperties;
+
     @Value("classpath:es-mappings/knowledge_base.json") // 加载 JSON 文件
     private org.springframework.core.io.Resource mappingResource;
 
@@ -86,6 +89,17 @@ public class EsIndexInitializer implements CommandLineRunner {
             createIndex();
         } else {
             logger.info("索引 'knowledge_base' 已存在");
+            try {
+                // 旧索引必须先显式补字段，否则动态映射会给 chunkContext 使用错误的分词器。
+                esClient.indices().putMapping(p -> p.index("knowledge_base").withJson(new StringReader("""
+                        {"properties":{"chunkContext":{"type":"text","analyzer":"ik_max_word","search_analyzer":"ik_smart"}}}
+                        """)));
+            } catch (Exception e) {
+                if (contextualRetrievalProperties.isEnabled()) {
+                    throw e;
+                }
+                logger.warn("补充 chunkContext 映射失败；上下文检索未开启: {}", e.getMessage());
+            }
         }
     }
 
