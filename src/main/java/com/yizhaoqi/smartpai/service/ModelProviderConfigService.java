@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
@@ -76,8 +77,53 @@ public class ModelProviderConfigService {
         return settings.providers().stream()
                 .filter(ProviderConfigView::active)
                 .findFirst()
-                .map(this::toActiveProvider)
+                .map(provider -> toActiveProvider(scope, provider))
                 .orElseThrow(() -> new CustomException("未找到激活的模型配置: " + scope, HttpStatus.INTERNAL_SERVER_ERROR));
+    }
+
+    /** Resolve an inactive embedding provider without changing the live query model. */
+    public ActiveProviderView getEmbeddingProvider(String providerCode) {
+        return currentSettings.embedding().providers().stream()
+                .filter(provider -> provider.provider().equals(providerCode) && provider.enabled())
+                .findFirst()
+                .map(provider -> toActiveProvider(SCOPE_EMBEDDING, provider))
+                .orElseThrow(() -> new CustomException("未找到已启用的 Embedding provider: " + providerCode,
+                        HttpStatus.BAD_REQUEST));
+    }
+
+    /** Called only after a candidate index has passed count and query checks. */
+    @Transactional
+    public synchronized void activateRebuiltEmbeddingProvider(String providerCode, String model,
+                                                               Integer dimension, String updatedBy) {
+        ActiveProviderView candidate = getEmbeddingProvider(providerCode);
+        if (model == null || model.isBlank() || dimension == null || dimension <= 0) {
+            throw new CustomException("目标 Embedding 模型或维度无效", HttpStatus.BAD_REQUEST);
+        }
+        List<ModelProviderConfig> configs = repository.findByConfigScopeOrderByProviderCodeAsc(SCOPE_EMBEDDING);
+        if (configs.stream().noneMatch(config -> config.getProviderCode().equals(providerCode))) {
+            ModelProviderConfig config = new ModelProviderConfig();
+            config.setConfigScope(SCOPE_EMBEDDING);
+            config.setProviderCode(candidate.provider());
+            config.setDisplayName(candidate.displayName());
+            config.setApiStyle(candidate.apiStyle());
+            config.setApiBaseUrl(candidate.apiBaseUrl());
+            config.setModelName(candidate.model());
+            config.setEmbeddingDimension(candidate.dimension());
+            config.setEnabled(true);
+            config.setApiKeyCiphertext(candidate.apiKey() == null || candidate.apiKey().isBlank()
+                    ? null : secretCryptoService.encrypt(candidate.apiKey()));
+            configs.add(config);
+        }
+        for (ModelProviderConfig config : configs) {
+            if (config.getProviderCode().equals(providerCode)) {
+                config.setModelName(model);
+                config.setEmbeddingDimension(dimension);
+            }
+            config.setActive(config.getProviderCode().equals(providerCode));
+            config.setUpdatedBy(updatedBy);
+            repository.save(config);
+        }
+        reloadSettings();
     }
 
     public synchronized ScopeSettingsView updateScope(String scope, UpdateScopeRequest request, String updatedBy) {
@@ -89,10 +135,10 @@ public class ModelProviderConfigService {
         String currentActiveProvider = existingScope.activeProvider();
         ProviderConfigView currentActiveConfig = existingMap.get(currentActiveProvider);
 
-        if (SCOPE_EMBEDDING.equals(normalizedScope) && !Objects.equals(request.activeProvider(), currentActiveProvider)) {
+        if (SCOPE_EMBEDDING.equals(normalizedScope)) {
             ProviderUpsertRequest target = findProviderRequest(request.providers(), request.activeProvider());
             if (target != null && currentActiveConfig != null && requiresEmbeddingReindex(currentActiveConfig, target)) {
-                throw new CustomException("Embedding 模型切换需要重嵌入任务，当前版本不支持直接切换 active provider", HttpStatus.CONFLICT);
+                throw new CustomException("Embedding 模型或维度变更需要先完成版本索引重建", HttpStatus.CONFLICT);
             }
         }
 
@@ -262,9 +308,9 @@ public class ModelProviderConfigService {
         return new ScopeSettingsView(defaults.scope(), activeProvider, providers);
     }
 
-    private ActiveProviderView toActiveProvider(ProviderConfigView provider) {
+    private ActiveProviderView toActiveProvider(String scope, ProviderConfigView provider) {
         String apiKey = null;
-        Optional<ModelProviderConfig> persisted = repository.findByConfigScopeAndProviderCode(resolveScopeByProvider(provider.provider()), provider.provider());
+        Optional<ModelProviderConfig> persisted = repository.findByConfigScopeAndProviderCode(scope, provider.provider());
         if (persisted.isPresent()) {
             apiKey = secretCryptoService.decrypt(persisted.get().getApiKeyCiphertext());
         } else if ("deepseek".equals(provider.provider())) {
@@ -299,7 +345,8 @@ public class ModelProviderConfigService {
         if (!Objects.equals(current.model(), target.model())) {
             return true;
         }
-        return !Objects.equals(current.dimension(), target.dimension());
+        return !Objects.equals(current.dimension(),
+                target.dimension() != null ? target.dimension() : current.dimension());
     }
 
     private Map<String, ProviderConfigView> toProviderMap(List<ProviderConfigView> providers) {

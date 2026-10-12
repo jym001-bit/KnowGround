@@ -42,8 +42,15 @@ public class FileProcessingConsumer {
         this.conflictService = conflictService;
     }
 
-    @KafkaListener(topics = "#{kafkaConfig.getFileProcessingTopic()}", groupId = "#{kafkaConfig.getFileProcessingGroupId()}")
+    @KafkaListener(id = "fileProcessing", topics = "#{kafkaConfig.getFileProcessingTopic()}", groupId = "#{kafkaConfig.getFileProcessingGroupId()}")
     public void processTask(FileProcessingTask task) {
+        try (com.yizhaoqi.smartpai.service.EmbeddingSwitchGate.Permit ignored =
+                     com.yizhaoqi.smartpai.service.DocumentMutationGate.read()) {
+            processTaskLocked(task);
+        }
+    }
+
+    private void processTaskLocked(FileProcessingTask task) {
         log.info("Received task: {}", task);
         log.info("文件权限信息: userId={}, orgTag={}, isPublic={}", 
                 task.getUserId(), task.getOrgTag(), task.isPublic());

@@ -11,6 +11,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 public interface DocumentVectorRepository extends JpaRepository<DocumentVector, Long> {
+    @Query(value = "SELECT COUNT(DISTINCT file_md5, chunk_id) FROM document_vectors", nativeQuery = true)
+    long countDistinctChunks();
+
     List<DocumentVector> findByFileMd5(String fileMd5); // 查询某文件的所有分块
 
     List<DocumentVector> findByFileMd5OrderByChunkIdAsc(String fileMd5); // 按分块顺序查询某文件的所有分块

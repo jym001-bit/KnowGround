@@ -49,6 +49,13 @@ public class VectorizationService {
     }
 
     public VectorizationUsageResult vectorizeWithUsage(String fileMd5, String userId, String orgTag, boolean isPublic, String requesterId) {
+        try (EmbeddingSwitchGate.Permit ignored = EmbeddingSwitchGate.read()) {
+            return vectorizeWithUsageLocked(fileMd5, userId, orgTag, isPublic, requesterId);
+        }
+    }
+
+    private VectorizationUsageResult vectorizeWithUsageLocked(String fileMd5, String userId, String orgTag,
+                                                               boolean isPublic, String requesterId) {
         try {
             logger.info("开始向量化文件，fileMd5: {}, userId: {}, orgTag: {}, isPublic: {}", 
                        fileMd5, userId, orgTag, isPublic);

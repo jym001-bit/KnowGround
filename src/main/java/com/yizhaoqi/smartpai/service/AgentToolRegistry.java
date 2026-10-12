@@ -6,6 +6,7 @@ import co.elastic.clients.elasticsearch._types.StoreStats;
 import co.elastic.clients.elasticsearch.indices.IndicesStatsResponse;
 import co.elastic.clients.elasticsearch.indices.stats.IndicesStats;
 import com.yizhaoqi.smartpai.client.DeepSeekClient;
+import com.yizhaoqi.smartpai.config.KnowledgeIndex;
 import com.yizhaoqi.smartpai.entity.SearchResult;
 import com.yizhaoqi.smartpai.model.FileUpload;
 import com.yizhaoqi.smartpai.repository.FileUploadRepository;
@@ -26,7 +27,7 @@ import java.util.function.Consumer;
 @Service
 public class AgentToolRegistry {
 
-    private static final String KNOWLEDGE_INDEX = "knowledge_base";
+    private static final String KNOWLEDGE_INDEX = KnowledgeIndex.ALIAS;
     private static final int DEFAULT_TOP_K = 5;
     private static final int MAX_SEARCH_DOCS = 20;
 
@@ -156,7 +157,7 @@ public class AgentToolRegistry {
                                                       Consumer<String> onChunk) {
         try {
             IndicesStatsResponse statsResponse = elasticsearchClient.indices().stats(s -> s.index(KNOWLEDGE_INDEX));
-            IndicesStats indexStats = statsResponse.indices().get(KNOWLEDGE_INDEX);
+            IndicesStats indexStats = statsResponse.indices().values().stream().findFirst().orElse(null);
             DocStats docStats = indexStats != null && indexStats.total() != null ? indexStats.total().docs() : null;
             StoreStats storeStats = indexStats != null && indexStats.total() != null ? indexStats.total().store() : null;
 

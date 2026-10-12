@@ -6,6 +6,7 @@ import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.yizhaoqi.smartpai.client.EmbeddingClient;
+import com.yizhaoqi.smartpai.config.KnowledgeIndex;
 import com.yizhaoqi.smartpai.client.RerankClient;
 import com.yizhaoqi.smartpai.config.ContextualRetrievalProperties;
 import com.yizhaoqi.smartpai.config.HybridSearchProperties;
@@ -49,7 +50,7 @@ public class HybridSearchService {
     private static final String MODE_HYBRID_RRF = "HYBRID_RRF";
     private static final String MODE_TEXT_ONLY = "TEXT_ONLY";
     private static final int ES_MAX_NUM_CANDIDATES = 10000;
-    private static final String KNOWLEDGE_INDEX = "knowledge_base";
+    private static final String KNOWLEDGE_INDEX = KnowledgeIndex.ALIAS;
     private static final double TEXT_ONLY_MIN_SCORE = 0.3d;
     static final String FIELD_TEXT = "textContent";
     static final String FIELD_CHUNK_CONTEXT = "chunkContext";
@@ -88,6 +89,12 @@ public class HybridSearchService {
      * 带权限过滤的混合搜索（自己的文档、公开文档、所属组织及其上级组织的文档）
      */
     public List<SearchResult> searchWithPermission(String query, String userId, int topK) {
+        try (EmbeddingSwitchGate.Permit ignored = EmbeddingSwitchGate.read()) {
+            return searchWithPermissionLocked(query, userId, topK);
+        }
+    }
+
+    private List<SearchResult> searchWithPermissionLocked(String query, String userId, int topK) {
         logger.debug("开始带权限搜索，查询: {}, 用户ID: {}", query, userId);
         Query permissionFilter;
         String userDbId;
@@ -116,6 +123,12 @@ public class HybridSearchService {
      * 原始搜索方法，不包含权限过滤，保留向后兼容性
      */
     public List<SearchResult> search(String query, int topK) {
+        try (EmbeddingSwitchGate.Permit ignored = EmbeddingSwitchGate.read()) {
+            return searchLocked(query, topK);
+        }
+    }
+
+    private List<SearchResult> searchLocked(String query, int topK) {
         logger.warn("使用了没有权限过滤的搜索方法，建议使用 searchWithPermission 方法");
         try {
             return hybridSearch(query, "system", topK, withSuppressedFilesExcluded(null));
