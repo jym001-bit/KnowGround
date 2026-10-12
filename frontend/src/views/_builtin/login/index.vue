@@ -236,3 +236,5 @@ const isRegisterModule = computed(
   .rag-runner { left: calc(100% - 12px); }
 }
 </style>
+
+<style scoped src="./login-input-fix.css"></style>

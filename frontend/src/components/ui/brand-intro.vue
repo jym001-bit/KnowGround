@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted } from 'vue';
 import HandwritingText from './handwriting-text.vue';
 
 const emit = defineEmits<{ finish: [] }>();
-const skipButton = ref<HTMLButtonElement>();
 const INTRO_DURATION = 3800;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let finished = false;
@@ -16,16 +15,14 @@ function finish() {
 }
 
 onMounted(() => {
-  skipButton.value?.focus({ preventScroll: true });
   timer = setTimeout(finish, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : INTRO_DURATION);
 });
 onUnmounted(() => clearTimeout(timer));
 </script>
 
 <template>
-  <section class="brand-intro" aria-label="知据开场动画" @keydown.esc="finish">
+  <section class="brand-intro" aria-label="知据开场动画">
     <div class="intro-corner">知据 <span>KNOWGROUND</span></div>
-    <button ref="skipButton" class="intro-skip" type="button" @click="finish">跳过动画 <span>↗</span></button>
     <div class="intro-center">
       <SystemLogo class="intro-logo" />
       <div class="intro-lettering"><HandwritingText /></div>
@@ -74,29 +71,6 @@ onUnmounted(() => clearTimeout(timer));
   font-size: 9px;
   letter-spacing: 2px;
   color: #9b9183;
-}
-.intro-skip {
-  position: absolute;
-  top: 28px;
-  right: 36px;
-  padding: 10px 16px;
-  border: 1px solid #d7cdbd;
-  border-radius: 30px;
-  background: transparent;
-  color: #756b5d;
-  font-size: 12px;
-  cursor: pointer;
-  z-index: 1;
-}
-.intro-skip span {
-  margin-left: 10px;
-}
-.intro-skip:hover {
-  background: #eee8dd;
-}
-.intro-skip:focus-visible {
-  outline: 2px solid #8c806e;
-  outline-offset: 4px;
 }
 .intro-center {
   width: min(860px, 94vw);
