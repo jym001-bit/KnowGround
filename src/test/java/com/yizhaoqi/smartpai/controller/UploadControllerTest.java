@@ -1,10 +1,10 @@
 package com.yizhaoqi.smartpai.controller;
 
-import com.yizhaoqi.smartpai.config.KafkaConfig;
 import com.yizhaoqi.smartpai.model.FileUpload;
 import com.yizhaoqi.smartpai.model.OrganizationTag;
 import com.yizhaoqi.smartpai.repository.FileUploadRepository;
 import com.yizhaoqi.smartpai.service.FileTypeValidationService;
+import com.yizhaoqi.smartpai.service.FileTaskOutboxService;
 import com.yizhaoqi.smartpai.service.ParseService;
 import com.yizhaoqi.smartpai.service.UploadService;
 import com.yizhaoqi.smartpai.service.UserService;
@@ -12,7 +12,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -31,10 +30,7 @@ class UploadControllerTest {
     private UploadService uploadService;
 
     @Mock
-    private KafkaTemplate<String, Object> kafkaTemplate;
-
-    @Mock
-    private KafkaConfig kafkaConfig;
+    private FileTaskOutboxService outboxService;
 
     @Mock
     private UserService userService;
@@ -53,8 +49,7 @@ class UploadControllerTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        uploadController = new UploadController(uploadService, kafkaTemplate);
-        ReflectionTestUtils.setField(uploadController, "kafkaConfig", kafkaConfig);
+        uploadController = new UploadController(uploadService, outboxService);
         ReflectionTestUtils.setField(uploadController, "userService", userService);
         ReflectionTestUtils.setField(uploadController, "fileUploadRepository", fileUploadRepository);
         ReflectionTestUtils.setField(uploadController, "fileTypeValidationService", fileTypeValidationService);
@@ -164,6 +159,6 @@ class UploadControllerTest {
         assertEquals("文件已完成合并", response.getBody().get("message"));
         assertEquals("https://example.com/merged/md5", ((Map<?, ?>) response.getBody().get("data")).get("object_url"));
         verify(uploadService, never()).mergeChunks(anyString(), anyString(), anyString());
-        verify(kafkaTemplate, never()).executeInTransaction(any());
+        verifyNoInteractions(outboxService);
     }
 }

@@ -1,12 +1,12 @@
 package com.yizhaoqi.smartpai.controller;
 
-import com.yizhaoqi.smartpai.config.KafkaConfig;
 import com.yizhaoqi.smartpai.exception.CustomException;
 import com.yizhaoqi.smartpai.model.FileProcessingTask;
 import com.yizhaoqi.smartpai.model.FileUpload;
 import com.yizhaoqi.smartpai.model.OrganizationTag;
 import com.yizhaoqi.smartpai.repository.FileUploadRepository;
 import com.yizhaoqi.smartpai.service.FileTypeValidationService;
+import com.yizhaoqi.smartpai.service.FileTaskOutboxService;
 import com.yizhaoqi.smartpai.service.ParseService;
 import com.yizhaoqi.smartpai.service.UploadService;
 import com.yizhaoqi.smartpai.service.UserService;
@@ -14,7 +14,6 @@ import com.yizhaoqi.smartpai.utils.LogUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -35,10 +34,7 @@ public class UploadController {
     private UploadService uploadService;
 
     @Autowired
-    private KafkaTemplate<String, Object> kafkaTemplate;
-
-    @Autowired
-    private KafkaConfig kafkaConfig;
+    private FileTaskOutboxService outboxService;
 
     @Autowired
     private UserService userService;
@@ -52,9 +48,9 @@ public class UploadController {
     @Autowired
     private ParseService parseService;
 
-    public UploadController(UploadService uploadService, KafkaTemplate<String, Object> kafkaTemplate) {
+    public UploadController(UploadService uploadService, FileTaskOutboxService outboxService) {
         this.uploadService = uploadService;
-        this.kafkaTemplate = kafkaTemplate;
+        this.outboxService = outboxService;
     }
 
     /**
@@ -393,19 +389,8 @@ public class UploadController {
                     userId
             );
 
-            fileUpload.setVectorizationStatus(FileUpload.VECTORIZATION_STATUS_PROCESSING);
-            fileUpload.setVectorizationErrorMessage(null);
-            fileUpload.setActualEmbeddingTokens(null);
-            fileUpload.setActualChunkCount(null);
-            fileUploadRepository.save(fileUpload);
-            
-            LogUtils.logBusiness("MERGE_FILE", userId, "发送文件处理任务到Kafka(事务): topic=%s, fileMd5=%s, fileName=%s", 
-                    kafkaConfig.getFileProcessingTopic(), request.fileMd5(), request.fileName());
-            kafkaTemplate.executeInTransaction(kt -> {
-                kt.send(kafkaConfig.getFileProcessingTopic(), task);
-                return true;
-            });
-            LogUtils.logBusiness("MERGE_FILE", userId, "文件处理任务已发送: fileMd5=%s, fileName=%s, fileType=%s", request.fileMd5(), request.fileName(), fileType);
+            outboxService.completeUploadAndEnqueue(fileUpload.getId(), task);
+            LogUtils.logBusiness("MERGE_FILE", userId, "文件处理任务已入 Outbox: fileMd5=%s, fileName=%s", request.fileMd5(), request.fileName());
 
             // 构建数据对象
             Map<String, Object> data = new HashMap<>();
@@ -418,7 +403,7 @@ public class UploadController {
             // 构建统一响应格式
             Map<String, Object> response = new HashMap<>();
             response.put("code", 200);
-            response.put("message", "文件合并成功，任务已发送到 Kafka");
+            response.put("message", "文件合并成功，任务已进入处理队列");
             response.put("data", data);
             
             LogUtils.logUserOperation(userId, "MERGE_FILE", request.fileMd5(), "SUCCESS");

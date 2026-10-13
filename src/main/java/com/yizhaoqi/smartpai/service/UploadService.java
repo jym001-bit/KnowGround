@@ -22,7 +22,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -617,17 +616,7 @@ public class UploadService {
                 deleteFileMark(fileMd5, userId);
                 logger.info("分片状态记录已删除 => fileMd5: {}, fileName: {}, userId: {}", fileMd5, fileName, userId);
 
-                // 更新文件状态
-                logger.info("更新文件状态为已完成 => fileMd5: {}, fileName: {}, fileType: {}, userId: {}", fileMd5, fileName, fileType, userId);
-                FileUpload fileUpload = fileUploadRepository.findFirstByFileMd5AndUserIdOrderByCreatedAtDesc(fileMd5, userId)
-                        .orElseThrow(() -> {
-                            logger.error("更新文件状态失败，文件记录不存在 => fileMd5: {}, fileName: {}", fileMd5, fileName);
-                            return new RuntimeException("文件记录不存在: " + fileMd5);
-                        });
-                fileUpload.setStatus(FileUpload.STATUS_COMPLETED);
-                fileUpload.setMergedAt(LocalDateTime.now());
-                fileUploadRepository.save(fileUpload);
-                logger.info("文件状态已更新为已完成 => fileMd5: {}, fileName: {}, fileType: {}", fileMd5, fileName, fileType);
+                // 对象已合并；控制器随后用 Outbox 事务一并提交文件最终状态和处理任务。
 
                 // 生成预签名 URL（有效期为 1 小时）
                 logger.info("开始生成预签名URL => fileMd5: {}, fileName: {}, path: {}", fileMd5, fileName, mergedPath);
