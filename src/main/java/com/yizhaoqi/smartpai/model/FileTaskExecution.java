@@ -29,6 +29,11 @@ public class FileTaskExecution {
 
     private LocalDateTime leaseUntil;
 
+    private LocalDateTime heartbeatAt;
+
+    @Column(nullable = false)
+    private int recoveryCount;
+
     @Column(length = 1000)
     private String lastError;
 }

@@ -39,13 +39,21 @@ public class FileTaskClaimService {
     }
 
     public String claim(FileProcessingTask task) {
+        if (task.getTaskId() == null || task.getTaskId().isBlank()) {
+            // 升级前没有 Outbox 可追踪的消息，不再把历史积压任务放入新消费线程。
+            jdbc.update("update file_upload set vectorization_status='FAILED', "
+                            + "vectorization_error_message='旧版任务没有任务 ID，请手动重试' "
+                            + "where file_md5=? and vectorization_status='PROCESSING'", task.getFileMd5());
+            log.warn("旧版无任务 ID 的文件消息已跳过: fileMd5={}", task.getFileMd5());
+            return null;
+        }
         String id = taskId(task);
         String owner = UUID.randomUUID().toString();
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime lease = now.plusMinutes(2);
         try {
-            jdbc.update("insert into file_task_execution (task_id, file_md5, status, owner, lease_until) values (?, ?, 'PROCESSING', ?, ?)",
-                    id, task.getFileMd5(), owner, lease);
+            jdbc.update("insert into file_task_execution (task_id, file_md5, status, owner, lease_until, heartbeat_at, recovery_count) values (?, ?, 'PROCESSING', ?, ?, ?, 0)",
+                    id, task.getFileMd5(), owner, lease, now);
             active.put(id, owner);
             return owner;
         } catch (DataIntegrityViolationException duplicate) {
@@ -54,7 +62,8 @@ public class FileTaskClaimService {
                 active.put(id, owner);
                 return owner;
             }
-            if (executions.findById(id).map(row -> "COMPLETED".equals(row.getStatus())).orElse(false)) {
+            if (executions.findById(id).map(row -> "COMPLETED".equals(row.getStatus())
+                    || "EXHAUSTED".equals(row.getStatus())).orElse(false)) {
                 return null;
             }
             throw new TaskLeaseBusyException(id);
@@ -65,11 +74,19 @@ public class FileTaskClaimService {
     public void renewActiveLeases() {
         active.forEach((id, owner) -> {
             try {
-                if (executions.renew(id, owner, LocalDateTime.now().plusMinutes(2)) == 0) active.remove(id, owner);
+                LocalDateTime now = LocalDateTime.now();
+                if (executions.renew(id, owner, now.plusMinutes(2), now.minusMinutes(10)) == 0) active.remove(id, owner);
             } catch (Exception e) {
                 log.error("文件任务租约续期失败: taskId={}", id, e);
             }
         });
+    }
+
+    public void heartbeat(FileProcessingTask task, String owner) {
+        LocalDateTime now = LocalDateTime.now();
+        if (executions.heartbeat(taskId(task), owner, now, now.plusMinutes(2)) != 1) {
+            throw new StaleFileTaskException(taskId(task));
+        }
     }
 
     public void finish(FileProcessingTask task, String owner, boolean success, Exception error) {
@@ -92,6 +109,7 @@ public class FileTaskClaimService {
         row.setTaskType(task.getTaskType() == null ? "UPLOAD_PROCESS" : task.getTaskType());
         row.setReason(reason == null ? "Kafka 重试耗尽" : reason.substring(0, Math.min(1000, reason.length())));
         deadLetters.save(row);
+        jdbc.update("update file_task_execution set status='EXHAUSTED' where task_id=? and status='FAILED'", id);
         log.error("文件处理死信告警: taskId={}, fileMd5={}, reason={}", id, task.getFileMd5(), row.getReason());
     }
 }

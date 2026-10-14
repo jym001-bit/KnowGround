@@ -8,6 +8,8 @@ import com.yizhaoqi.smartpai.repository.FileUploadRepository;
 import com.yizhaoqi.smartpai.service.DocumentService;
 import com.yizhaoqi.smartpai.service.ElasticsearchService;
 import com.yizhaoqi.smartpai.service.FileTaskClaimService;
+import com.yizhaoqi.smartpai.service.FileTaskHeartbeat;
+import com.yizhaoqi.smartpai.service.StaleFileTaskException;
 import com.yizhaoqi.smartpai.service.ParseService;
 import com.yizhaoqi.smartpai.service.UploadService;
 import com.yizhaoqi.smartpai.service.VectorizationService;
@@ -71,11 +73,18 @@ public class FileProcessingConsumer {
             return;
         }
         try (com.yizhaoqi.smartpai.service.EmbeddingSwitchGate.Permit ignored =
-                     com.yizhaoqi.smartpai.service.DocumentMutationGate.read()) {
+                     com.yizhaoqi.smartpai.service.DocumentMutationGate.read();
+             FileTaskHeartbeat.Scope heartbeat = FileTaskHeartbeat.bind(() -> claims.heartbeat(task, owner))) {
+            FileTaskHeartbeat.pulse();
             processTaskLocked(task);
+            FileTaskHeartbeat.pulse();
             claims.finish(task, owner, true, null);
         } catch (Exception e) {
             claims.finish(task, owner, false, e);
+            if (isStale(e)) {
+                log.warn("旧消费线程已失去文件任务所有权，停止处理: taskId={}", claims.taskId(task));
+                return;
+            }
             throw e;
         }
     }
@@ -122,6 +131,7 @@ public class FileProcessingConsumer {
             elasticsearchService.deleteByFileMd5(task.getFileMd5());
             parseService.parseAndSave(task.getFileMd5(), fileStream, 
                     task.getUserId(), task.getOrgTag(), task.isPublic());
+            FileTaskHeartbeat.pulse();
             log.info("文件解析完成，fileMd5: {}", task.getFileMd5());
 
             // 向量化处理
@@ -132,11 +142,12 @@ public class FileProcessingConsumer {
                     task.isPublic(),
                     task.getUserId()
             );
+            FileTaskHeartbeat.pulse();
             documentService.markVectorizationCompleted(task.getFileMd5(), vectorizationResult);
             conflictService.submit(task.getFileMd5(), task.getUserId());
             log.info("向量化完成，fileMd5: {}", task.getFileMd5());
         } catch (Exception e) {
-            documentService.markVectorizationFailed(task.getFileMd5(), e);
+            if (!isStale(e)) documentService.markVectorizationFailed(task.getFileMd5(), e);
             log.error("Error processing task: {}", task, e);
             // 抛出异常让 Kafka 的 DefaultErrorHandler 捕获并触发重试 / 死信
             throw new RuntimeException("Error processing task", e);
@@ -160,10 +171,17 @@ public class FileProcessingConsumer {
             documentService.reindexDocument(task.getFileMd5(), requesterId);
             conflictService.submit(task.getFileMd5(), requesterId);
         } catch (Exception e) {
-            documentService.markVectorizationFailed(task.getFileMd5(), e);
+            if (!isStale(e)) documentService.markVectorizationFailed(task.getFileMd5(), e);
             log.error("Error reindexing task: {}", task, e);
             throw new RuntimeException("Error reindexing task", e);
         }
+    }
+
+    private boolean isStale(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof StaleFileTaskException) return true;
+        }
+        return false;
     }
 
     /**

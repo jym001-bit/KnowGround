@@ -12,16 +12,24 @@ import java.time.LocalDateTime;
 public interface FileTaskExecutionRepository extends JpaRepository<FileTaskExecution, String> {
     @Modifying
     @Transactional
-    @Query("update FileTaskExecution e set e.status = 'PROCESSING', e.owner = :owner, e.leaseUntil = :lease "
-            + "where e.taskId = :id and (e.status = 'FAILED' or (e.status = 'PROCESSING' and e.leaseUntil < :now))")
+    @Query("update FileTaskExecution e set e.status = 'PROCESSING', e.owner = :owner, e.leaseUntil = :lease, e.heartbeatAt = :now "
+            + "where e.taskId = :id and (e.status in ('FAILED', 'RECOVERING') or (e.status = 'PROCESSING' and e.leaseUntil < :now))")
     int claim(@Param("id") String id, @Param("owner") String owner,
               @Param("now") LocalDateTime now, @Param("lease") LocalDateTime lease);
 
     @Modifying
     @Transactional
     @Query("update FileTaskExecution e set e.leaseUntil = :lease where e.taskId = :id "
+            + "and e.owner = :owner and e.status = 'PROCESSING' and e.heartbeatAt >= :cutoff")
+    int renew(@Param("id") String id, @Param("owner") String owner, @Param("lease") LocalDateTime lease,
+              @Param("cutoff") LocalDateTime cutoff);
+
+    @Modifying
+    @Transactional
+    @Query("update FileTaskExecution e set e.heartbeatAt = :now, e.leaseUntil = :lease where e.taskId = :id "
             + "and e.owner = :owner and e.status = 'PROCESSING'")
-    int renew(@Param("id") String id, @Param("owner") String owner, @Param("lease") LocalDateTime lease);
+    int heartbeat(@Param("id") String id, @Param("owner") String owner,
+                  @Param("now") LocalDateTime now, @Param("lease") LocalDateTime lease);
 
     @Modifying
     @Transactional

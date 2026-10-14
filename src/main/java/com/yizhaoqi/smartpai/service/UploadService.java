@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -87,6 +88,12 @@ public class UploadService {
             if (fileUpload.getStatus() == FileUpload.STATUS_COMPLETED) {
                 throw new CustomException("文件已完成合并，不允许继续上传分片", HttpStatus.CONFLICT);
             }
+            if (fileUpload.getStatus() == FileUpload.STATUS_ABANDONED) {
+                throw new CustomException("废弃上传正在清理，请稍后重试", HttpStatus.CONFLICT);
+            }
+            if (fileUploadRepository.touchChunk(fileUpload.getId(), LocalDateTime.now()) != 1) {
+                throw new CustomException("上传状态已变化，请重试", HttpStatus.CONFLICT);
+            }
 
             String storagePath = buildChunkStoragePath(fileMd5, chunkIndex);
 
@@ -132,6 +139,10 @@ public class UploadService {
                         .build();
 
                 minioClient.putObject(putObjectArgs);
+                if (fileUploadRepository.touchChunk(fileUpload.getId(), LocalDateTime.now()) != 1) {
+                    minioClient.removeObject(RemoveObjectArgs.builder().bucket("uploads").object(storagePath).build());
+                    throw new CustomException("上传已被废弃清理任务接管，请重试", HttpStatus.CONFLICT);
+                }
                 logger.info("分片上传到MinIO成功 => fileMd5: {}, fileName: {}, fileType: {}, chunkIndex: {}", fileMd5, fileName, fileType, chunkIndex);
             } catch (Exception e) {
                 logger.error("分片上传到MinIO失败 => fileMd5: {}, fileName: {}, fileType: {}, chunkIndex: {}, 错误类型: {}, 错误信息: {}",
@@ -755,6 +766,7 @@ public class UploadService {
                 fileUpload.setPublic(isPublic);
                 fileUpload.setVectorizationStatus(null);
                 fileUpload.setVectorizationErrorMessage(null);
+                fileUpload.setLastChunkAt(LocalDateTime.now());
 
                 try {
                     return fileUploadRepository.save(fileUpload);

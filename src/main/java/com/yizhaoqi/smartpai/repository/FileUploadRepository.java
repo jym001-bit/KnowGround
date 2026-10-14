@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.time.LocalDateTime;
 
 @Repository
 public interface FileUploadRepository extends JpaRepository<FileUpload, Long> {
@@ -70,4 +71,9 @@ public interface FileUploadRepository extends JpaRepository<FileUpload, Long> {
     int updateStatusIfCurrent(@Param("id") Long id,
                               @Param("currentStatus") int currentStatus,
                               @Param("newStatus") int newStatus);
+
+    @Transactional
+    @Modifying
+    @Query("update FileUpload f set f.lastChunkAt = :now where f.id = :id and f.status = 0")
+    int touchChunk(@Param("id") Long id, @Param("now") LocalDateTime now);
 }

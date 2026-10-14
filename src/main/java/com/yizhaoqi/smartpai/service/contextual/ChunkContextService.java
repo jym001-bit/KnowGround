@@ -167,6 +167,7 @@ public class ChunkContextService {
                 .filter(chunk -> contexts.containsKey(chunk.getChunkId()))
                 .toList();
         updated.forEach(chunk -> chunk.setChunkContext(contexts.get(chunk.getChunkId())));
+        com.yizhaoqi.smartpai.service.FileTaskHeartbeat.pulse();
         if (!updated.isEmpty()) {
             documentVectorRepository.saveAll(updated);
         }

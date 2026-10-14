@@ -18,6 +18,7 @@ import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.FixedBackOff;
 import com.yizhaoqi.smartpai.service.TaskLeaseBusyException;
+import com.yizhaoqi.smartpai.exception.InsufficientBalanceException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -131,6 +132,9 @@ public class KafkaConfig {
         errorHandler.setBackOffFunction((record, failure) -> {
             Throwable cause = failure;
             while (cause != null) {
+                if (cause instanceof InsufficientBalanceException) {
+                    return new FixedBackOff(0L, 0);
+                }
                 if (cause instanceof TaskLeaseBusyException) {
                     return new FixedBackOff(15_000L, 10);
                 }

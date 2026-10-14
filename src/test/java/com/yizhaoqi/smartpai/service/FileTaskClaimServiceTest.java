@@ -17,7 +17,8 @@ class FileTaskClaimServiceTest {
         source.setURL("jdbc:h2:mem:claims;DB_CLOSE_DELAY=-1");
         JdbcTemplate jdbc = new JdbcTemplate(source);
         jdbc.execute("create table if not exists file_task_execution (task_id varchar(100) primary key, "
-                + "file_md5 varchar(32), status varchar(16), owner varchar(36), lease_until timestamp)");
+                + "file_md5 varchar(32), status varchar(16), owner varchar(36), lease_until timestamp, "
+                + "heartbeat_at timestamp, recovery_count int not null default 0)");
         FileTaskExecutionRepository executions = mock(FileTaskExecutionRepository.class);
         FileTaskClaimService claims = new FileTaskClaimService(jdbc, executions,
                 mock(FileTaskDeadLetterRepository.class));

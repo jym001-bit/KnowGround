@@ -3,6 +3,7 @@ package com.yizhaoqi.smartpai.client;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yizhaoqi.smartpai.service.ModelProviderConfigService;
+import com.yizhaoqi.smartpai.service.FileTaskHeartbeat;
 import com.yizhaoqi.smartpai.service.RateLimitService;
 import com.yizhaoqi.smartpai.service.UsageQuotaService;
 import org.slf4j.Logger;
@@ -114,6 +115,7 @@ public class EmbeddingClient {
                     usageQuotaService.settleReservation(reservation, parsedResponse.totalTokens());//按实际用量结算
                     all.addAll(parsedResponse.vectors());
                     totalTokens += parsedResponse.totalTokens();
+                    if (usageType == UsageType.UPLOAD) FileTaskHeartbeat.pulse();
                 } catch (Exception e) {
                     usageQuotaService.abortReservation(reservation);
                     throw e;

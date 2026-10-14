@@ -106,6 +106,7 @@ public class VectorizationService {
                     ))
                     .toList();
 
+            FileTaskHeartbeat.pulse();
             elasticsearchService.bulkIndex(esDocuments); // 不是一条一条请求 Elasticsearch,批量存储到 Elasticsearch
 
             logger.info("向量化完成，fileMd5: {}", fileMd5);
