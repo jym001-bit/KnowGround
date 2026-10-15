@@ -157,7 +157,7 @@ const tokenRecordColumns = computed(() => [
     width: 100,
     render: (row: Api.User.TokenRecord) => {
       const typeMap: Record<string, { text: string; type: any }> = {
-        INCREASE: { text: '充值', type: 'success' },
+        INCREASE: { text: '增加', type: 'success' },
         CONSUME: { text: '消耗', type: 'warning' }
       };
       const type = typeMap[row.changeType] || { text: row.changeType, type: 'default' };
@@ -218,15 +218,15 @@ const tokenRecordColumns = computed(() => [
             </NAvatar>
             <div class="flex flex-col gap-1">
               <div>{{ userInfo.username }}</div>
-              <span class="text-xs text-stone-400">今日额度 · {{ usage.day || '未统计' }}</span>
+              <span class="text-xs text-stone-400">今日用量 · {{ usage.day || '未统计' }}</span>
             </div>
           </div>
         </template>
         <NScrollbar class="max-h-60vh">
           <div class="flex flex-col gap-4 p-4">
             <div v-if="usageLoaded" class="grid gap-4 md:grid-cols-2">
-              <QuotaMeter label="LLM Token" :quota="usage.llm" :seed="2" />
-              <QuotaMeter label="Embedding Token" :quota="usage.embedding" :seed="7" />
+              <QuotaMeter label="LLM Token" :quota="usage.llm" :seed="2" :admin="userInfo.role === 'ADMIN'" />
+              <QuotaMeter label="Embedding Token" :quota="usage.embedding" :seed="7" :admin="userInfo.role === 'ADMIN'" />
             </div>
             <NEmpty v-else-if="!loading" description="暂时无法获取额度数据" />
 

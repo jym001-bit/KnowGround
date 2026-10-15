@@ -18,6 +18,16 @@ public class UsageQuotaProperties {
     
     private DailyTokenQuota llm = new DailyTokenQuota(true, 10_000);
     private DailyTokenQuota embedding = new DailyTokenQuota(true, 3_000);
+    private DailyGrant dailyGrant = new DailyGrant();
+
+    @Data
+    public static class DailyGrant {
+        private boolean enabled = false;
+        private long llmTokens = 800_000;
+        private long embeddingTokens = 500_000;
+        private long llmSkipAbove = 500_000;
+        private long embeddingSkipAbove = 300_000;
+    }
 
     @Data
     public static class DailyTokenQuota {

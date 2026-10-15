@@ -21,11 +21,12 @@ class RateLimitServiceTest {
     @Mock private RateLimitConfigService rateLimitConfig;
     @Mock private UsageQuotaService usageQuota;
     @Mock private QuotaExemptionService quotaExemptionService;
+    @Mock private DailyTokenGrantService dailyTokenGrantService;
 
     @Test
     void eleventhQuestionIsAllowedWhenMinuteLimitIsNotReached() {
         RateLimitService service = new RateLimitService(
-                new RateLimitProperties(), rateLimitConfig, usageQuota, quotaExemptionService, bucket
+                new RateLimitProperties(), rateLimitConfig, usageQuota, quotaExemptionService, bucket, dailyTokenGrantService
         );
         when(rateLimitConfig.getCurrentSettings()).thenReturn(new RateLimitConfigService.RateLimitSettingsView(
                 new RateLimitConfigService.WindowLimitView(30, 60), null, null, null, null
@@ -41,7 +42,7 @@ class RateLimitServiceTest {
     @Test
     void minuteChatLimitStillBlocks() {
         RateLimitService service = new RateLimitService(
-                new RateLimitProperties(), rateLimitConfig, usageQuota, quotaExemptionService, bucket
+                new RateLimitProperties(), rateLimitConfig, usageQuota, quotaExemptionService, bucket, dailyTokenGrantService
         );
         when(rateLimitConfig.getCurrentSettings()).thenReturn(new RateLimitConfigService.RateLimitSettingsView(
                 new RateLimitConfigService.WindowLimitView(30, 60), null, null, null, null
@@ -56,7 +57,7 @@ class RateLimitServiceTest {
     @Test
     void embeddingQueryHasNoDailyRequestLimit() {
         RateLimitService service = new RateLimitService(
-                new RateLimitProperties(), rateLimitConfig, usageQuota, quotaExemptionService, bucket
+                new RateLimitProperties(), rateLimitConfig, usageQuota, quotaExemptionService, bucket, dailyTokenGrantService
         );
         when(rateLimitConfig.getCurrentSettings()).thenReturn(new RateLimitConfigService.RateLimitSettingsView(
                 null, null, null,
@@ -72,7 +73,7 @@ class RateLimitServiceTest {
     @Test
     void adminQuestionSkipsMinuteLimits() {
         RateLimitService service = new RateLimitService(
-                new RateLimitProperties(), rateLimitConfig, usageQuota, quotaExemptionService, bucket
+                new RateLimitProperties(), rateLimitConfig, usageQuota, quotaExemptionService, bucket, dailyTokenGrantService
         );
         when(quotaExemptionService.isExempt("1")).thenReturn(true);
 

@@ -87,8 +87,8 @@ public class UsageBalanceDashboardService extends UsageDashboardService {
                 username,
                 scope,
                 consumer.getAmount(),
-                consumer.getBalanceBefore(),
-                consumer.getBalanceAfter(),  // remaining - 从数据库无法直接获取
+                consumer.getBalanceBefore() == null ? 0L : consumer.getBalanceBefore(),
+                consumer.getBalanceAfter() == null ? 0L : consumer.getBalanceAfter(),
                 consumer.getRequestCount()
         );
     }

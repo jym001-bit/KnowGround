@@ -77,6 +77,13 @@ public class UsageBalanceQuotaService extends UsageQuotaService {
         return new TokenReservation(scope, userId, "", "", reserveTokens, reserveTokens, 0, false, true);
     }
 
+    @Override
+    public TokenReservationBundle reserveExemptMetering(String scope, String userId) {
+        if (userId == null || userId.startsWith("system")) return TokenReservationBundle.noop(scope, userId);
+        TokenReservation meter = new TokenReservation("meter-" + scope, userId, "", "", 0, 0, 0, false, false);
+        return TokenReservationBundle.of(scope, userId, List.of(meter));
+    }
+
     /**
      * 记录用户聊天请求次数
      * @param userId
@@ -99,6 +106,13 @@ public class UsageBalanceQuotaService extends UsageQuotaService {
     @Transactional(rollbackFor = Exception.class)
     public void settleReservation(TokenReservation reservation, int actualTokens) {
         if (reservation == null || reservation.noop()) {
+            return;
+        }
+
+        if (reservation.scope().startsWith("meter-")) {
+            UserTokenRecord.TokenType type = "meter-llm".equals(reservation.scope())
+                    ? UserTokenRecord.TokenType.LLM : UserTokenRecord.TokenType.EMBEDDING;
+            userTokenService.recordExemptUsage(reservation.userId(), type, actualTokens);
             return;
         }
 
@@ -137,6 +151,12 @@ public class UsageBalanceQuotaService extends UsageQuotaService {
         }
     }
 
+    @Override
+    public void abortReservation(TokenReservation reservation) {
+        if (reservation != null && reservation.quotaKey().isBlank()) return;
+        super.abortReservation(reservation);
+    }
+
 
     /**
      * 获取用户使用情况快照
@@ -168,23 +188,18 @@ public class UsageBalanceQuotaService extends UsageQuotaService {
      * @return
      */
     private QuotaView buildQuotaView(String scope, String userId, UsageQuotaProperties.DailyTokenQuota quota) {
-        if (!isQuotaManaged(userId) || !quota.isEnabled()) {
-            return new QuotaView(false, 0, 0, 0, 0);
+        LocalDate today = LocalDate.now(ZoneId.systemDefault());
+        UserTokenRecord.TokenType type = "llm".equals(scope)
+                ? UserTokenRecord.TokenType.LLM : UserTokenRecord.TokenType.EMBEDDING;
+        long usedToday = userTokenService.getConsumedOnDay(userId, today, type);
+        long requestsToday = userTokenService.getRequestCountOnDay(userId, today, type);
+        if (quotaExemptionService.isExempt(userId)) {
+            return new QuotaView(false, usedToday, 0, 0, requestsToday);
         }
-
-        // 用户的总token
-        long limit, balance;
-        if ("llm".equals(scope)) {
-            balance = userTokenService.getLlmTokenBalance(userId);
-            limit = userTokenService.getUserLlmTotalIncreaseTokens(userId);
-        } else {
-            balance = userTokenService.getEmbeddingTokenBalance(userId);
-            limit = userTokenService.getUserEmbeddingTotalIncreaseTokens(userId);
-        }
-        long usedTokens = limit - balance;
-        // 请求次数
-        long requestCount = userTokenService.getUserTotalRequestCount(scope, userId);
-        return new QuotaView(true, usedTokens, limit, balance, requestCount);
+        long balance = type == UserTokenRecord.TokenType.LLM
+                ? userTokenService.getLlmTokenBalance(userId) : userTokenService.getEmbeddingTokenBalance(userId);
+        return new QuotaView(quota.isEnabled(), usedToday,
+                quota.isEnabled() ? quota.getDayMaxTokens() : 0, balance, requestsToday);
     }
 
     private String currentDay() {

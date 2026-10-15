@@ -42,6 +42,18 @@ public interface UserTokenRecordRepository extends JpaRepository<UserTokenRecord
             @Param("changeType") UserTokenRecord.ChangeType changeType
     );
 
+    @Query("SELECT COALESCE(SUM(r.amount), 0L) FROM UserTokenRecord r WHERE r.userId = :userId " +
+            "AND r.recordDate = :day AND r.tokenType = :tokenType AND r.changeType = 'CONSUME'")
+    long sumConsumedByUserAndDay(@Param("userId") String userId,
+                                 @Param("day") LocalDate day,
+                                 @Param("tokenType") UserTokenRecord.TokenType tokenType);
+
+    @Query("SELECT COALESCE(SUM(r.requestCount), 0L) FROM UserTokenRecord r WHERE r.userId = :userId " +
+            "AND r.recordDate = :day AND r.tokenType = :tokenType AND r.changeType = 'CONSUME'")
+    long countRequestsByUserAndDay(@Param("userId") String userId,
+                                   @Param("day") LocalDate day,
+                                   @Param("tokenType") UserTokenRecord.TokenType tokenType);
+
     /**
      * 查询用户最近 N 天指定 Token 类型的消耗统计（按日期分组）
      */

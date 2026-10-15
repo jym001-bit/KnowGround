@@ -116,19 +116,25 @@ rate-limit:
     day-window-seconds: ${RATE_LIMIT_EMBEDDING_DAY_WINDOW_SECONDS:86400}
 
 usage-quota:
-  # 总余额和每日额度同时生效：赠送额度不会按天重置。
+  # 总余额继续生效；个人日配额关闭时按当天首次登录/使用发放一次赠送。
   use-user-token-balance: ${USAGE_QUOTA_USE_USER_TOKEN_BALANCE:true}
-  # 每日 Token 配额，按自然日统计；系统初始化任务默认豁免。
+  # 个人每日 Token 硬上限，当前默认关闭；系统初始化任务默认豁免。
   retention-days: ${USAGE_QUOTA_RETENTION_DAYS:35}
   llm:
-    enabled: ${USAGE_QUOTA_LLM_ENABLED:true}
+    enabled: ${USAGE_QUOTA_LLM_ENABLED:false}
     day-max-tokens: ${USAGE_QUOTA_LLM_DAY_MAX_TOKENS:10000}
     init-tokens: ${USAGE_QUOTA_LLM_INIT_TOKENS:20000} # 新用户一次性赠送
   embedding:
-    enabled: ${USAGE_QUOTA_EMBEDDING_ENABLED:true}
+    enabled: ${USAGE_QUOTA_EMBEDDING_ENABLED:false}
     day-max-tokens: ${USAGE_QUOTA_EMBEDDING_DAY_MAX_TOKENS:3000}
     init-tokens: ${USAGE_QUOTA_EMBEDDING_INIT_TOKENS:10000} # 新用户一次性赠送
     admin-init-tokens: ${USAGE_QUOTA_EMBEDDING_ADMIN_INIT_TOKENS:100000} # 管理员初始 Embedding Token
+  daily-grant:
+    enabled: ${USAGE_QUOTA_DAILY_GRANT_ENABLED:false}
+    llm-tokens: ${USAGE_QUOTA_DAILY_GRANT_LLM_TOKENS:800000}
+    embedding-tokens: ${USAGE_QUOTA_DAILY_GRANT_EMBEDDING_TOKENS:500000}
+    llm-skip-above: ${USAGE_QUOTA_DAILY_GRANT_LLM_SKIP_ABOVE:500000}
+    embedding-skip-above: ${USAGE_QUOTA_DAILY_GRANT_EMBEDDING_SKIP_ABOVE:300000}
 
 file:
   parsing:

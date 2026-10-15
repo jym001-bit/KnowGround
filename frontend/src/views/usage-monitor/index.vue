@@ -520,7 +520,7 @@ onMounted(() => {
 
             <div class="limit-card">
               <div class="limit-title">Embedding 查询</div>
-              <p class="limit-label">每日查询次数不限；每日 Token 额度仍然生效。</p>
+              <p class="limit-label">个人每日 Token 上限已关闭；余额与全站预算仍然生效。</p>
               <div class="limit-grid">
                 <div>
                   <div class="limit-label">单用户分钟次数</div>

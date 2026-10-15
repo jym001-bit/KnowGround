@@ -19,6 +19,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +50,16 @@ public class UserTokenService {
      * Redis Key 前缀：user:token:embedding:{userId}
      */
     private static final String EMBEDDING_TOKEN_KEY_PREFIX = "user:token:embedding:";
+    private static final DefaultRedisScript<String> DAILY_GRANT_SCRIPT = new DefaultRedisScript<>("""
+            if redis.call('exists', KEYS[2]) == 1 then return 'duplicate' end
+            if tonumber(ARGV[2]) > tonumber(ARGV[3]) then
+                redis.call('set', KEYS[2], 'skipped', 'EX', ARGV[4])
+                return 'skipped'
+            end
+            local balance = redis.call('incrby', KEYS[1], ARGV[1])
+            redis.call('set', KEYS[2], 'granted', 'EX', ARGV[4])
+            return 'granted:' .. balance
+            """, String.class);
 
     private final StringRedisTemplate stringRedisTemplate;
 
@@ -83,10 +94,11 @@ public class UserTokenService {
         String value = stringRedisTemplate.opsForValue().get(key);
         if (StringUtils.isBlank(value)) {
             long initToken = resolveInitToken(userId, usageQuotaProperties.getLlm());
-            stringRedisTemplate.opsForValue().set(key, String.valueOf(initToken));
-            // 记录 Token 增加
-            recordTokenIncrease(userId, UserTokenRecord.TokenType.LLM, initToken, 0L, initToken, "注册赠送", null);
-            return initToken;
+            if (Boolean.TRUE.equals(stringRedisTemplate.opsForValue().setIfAbsent(key, String.valueOf(initToken)))) {
+                recordTokenIncrease(userId, UserTokenRecord.TokenType.LLM, initToken, 0L, initToken, "注册赠送", null);
+            }
+            value = stringRedisTemplate.opsForValue().get(key);
+            if (StringUtils.isBlank(value)) throw new IllegalStateException("LLM Token 余额初始化失败");
         }
         try {
             return Long.parseLong(value);
@@ -107,10 +119,11 @@ public class UserTokenService {
         String value = stringRedisTemplate.opsForValue().get(key);
         if (StringUtils.isBlank(value)) {
             long initToken = resolveInitToken(userId, usageQuotaProperties.getEmbedding());
-            stringRedisTemplate.opsForValue().set(key, String.valueOf(initToken));
-            // 添加 Embedding Token 增加记录
-            recordTokenIncrease(userId, UserTokenRecord.TokenType.EMBEDDING, initToken, 0L, initToken, "注册赠送", null);
-            return initToken;
+            if (Boolean.TRUE.equals(stringRedisTemplate.opsForValue().setIfAbsent(key, String.valueOf(initToken)))) {
+                recordTokenIncrease(userId, UserTokenRecord.TokenType.EMBEDDING, initToken, 0L, initToken, "注册赠送", null);
+            }
+            value = stringRedisTemplate.opsForValue().get(key);
+            if (StringUtils.isBlank(value)) throw new IllegalStateException("Embedding Token 余额初始化失败");
         }
         try {
             return Long.parseLong(value);
@@ -279,6 +292,38 @@ public class UserTokenService {
 
         stringRedisTemplate.opsForValue().increment(key, tokens);
         logger.info("用户 {} 增加 Embedding Token: {}, 当前余额：{}", userId, tokens, balanceAfter);
+    }
+
+    public long getConsumedOnDay(String userId, LocalDate day, UserTokenRecord.TokenType type) {
+        return userTokenRecordRepository.sumConsumedByUserAndDay(userId, day, type);
+    }
+
+    public long getRequestCountOnDay(String userId, LocalDate day, UserTokenRecord.TokenType type) {
+        return userTokenRecordRepository.countRequestsByUserAndDay(userId, day, type);
+    }
+
+    /** Redis 同时认领当天赠送并增加余额，重复登录或多实例不会重复发放。 */
+    public boolean grantDailyTokens(String userId, LocalDate day, UserTokenRecord.TokenType type,
+                                    long amount, long skipAbove) {
+        String balanceKey = type == UserTokenRecord.TokenType.LLM
+                ? buildLlmTokenKey(userId) : buildEmbeddingTokenKey(userId);
+        long before = type == UserTokenRecord.TokenType.LLM
+                ? getLlmTokenBalance(userId) : getEmbeddingTokenBalance(userId);
+        long consumed = getConsumedOnDay(userId, day, type);
+        String grantKey = "user:token:daily-grant:" + day + ":" + type + ":" + userId;
+        String outcome = stringRedisTemplate.execute(DAILY_GRANT_SCRIPT,
+                List.of(balanceKey, grantKey), String.valueOf(amount), String.valueOf(consumed),
+                String.valueOf(skipAbove), "259200");
+        if (outcome == null) throw new IllegalStateException("每日 Token 赠送执行失败");
+        if (!outcome.startsWith("granted:")) return false;
+        long after = Long.parseLong(outcome.substring("granted:".length()));
+        recordTokenIncrease(userId, type, amount, after - amount, after, "每日赠送", day.toString());
+        return true;
+    }
+
+    /** 管理员免扣费，但仍留下实际模型用量供本人查看。 */
+    public void recordExemptUsage(String userId, UserTokenRecord.TokenType type, int tokens) {
+        if (tokens > 0) recordTokenConsume(userId, type, tokens, null, null);
     }
 
     private Long safeAddTokenBalance(Long currentBalance, long tokens) {

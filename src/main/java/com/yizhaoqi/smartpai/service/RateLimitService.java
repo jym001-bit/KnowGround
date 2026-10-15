@@ -13,19 +13,22 @@ public class RateLimitService {
     private final RateLimitConfigService rateLimitConfigService;
     private final UsageQuotaService usageQuotaService;
     private final QuotaExemptionService quotaExemptionService;
+    private final DailyTokenGrantService dailyTokenGrantService;
 
     public RateLimitService(
             RateLimitProperties properties,
             RateLimitConfigService rateLimitConfigService,
             UsageQuotaService usageQuotaService,
             QuotaExemptionService quotaExemptionService,
-            AtomicTokenBucket bucket
+            AtomicTokenBucket bucket,
+            DailyTokenGrantService dailyTokenGrantService
     ) {
         this.bucket = bucket;
         this.properties = properties;
         this.rateLimitConfigService = rateLimitConfigService;
         this.usageQuotaService = usageQuotaService;
         this.quotaExemptionService = quotaExemptionService;
+        this.dailyTokenGrantService = dailyTokenGrantService;
     }
 
     public void checkRegisterByIp(String ip) {
@@ -50,8 +53,9 @@ public class RateLimitService {
             int estimatedPromptTokens,
             int maxCompletionTokens
     ) {
+        dailyTokenGrantService.grantIfEligible(userId);
         if (quotaExemptionService.isExempt(userId)) {
-            return UsageQuotaService.TokenReservationBundle.noop("llm", userId);
+            return usageQuotaService.reserveExemptMetering("llm", userId);
         }
         RateLimitConfigService.TokenBudgetView limit = rateLimitConfigService.getCurrentSettings().llmGlobalToken();
         return usageQuotaService.reserveLlmTokensWithGlobalBudget(
@@ -74,8 +78,9 @@ public class RateLimitService {
     }
 
     public UsageQuotaService.TokenReservationBundle reserveEmbeddingUploadUsage(String userId, java.util.List<String> texts) {
+        dailyTokenGrantService.grantIfEligible(userId);
         if (quotaExemptionService.isExempt(userId)) {
-            return UsageQuotaService.TokenReservationBundle.noop("embedding-upload", userId);
+            return usageQuotaService.reserveExemptMetering("embedding", userId);
         }
         RateLimitConfigService.TokenBudgetView limit = rateLimitConfigService.getCurrentSettings().embeddingUploadToken();
         return usageQuotaService.reserveEmbeddingTokensWithGlobalBudget(
@@ -92,8 +97,9 @@ public class RateLimitService {
     }
 
     public UsageQuotaService.TokenReservationBundle reserveEmbeddingQueryUsage(String userId, java.util.List<String> texts) {
+        dailyTokenGrantService.grantIfEligible(userId);
         if (quotaExemptionService.isExempt(userId)) {
-            return UsageQuotaService.TokenReservationBundle.noop("embedding-query", userId);
+            return usageQuotaService.reserveExemptMetering("embedding", userId);
         }
         checkEmbeddingQueryByUser(userId);
         RateLimitConfigService.TokenBudgetView limit = rateLimitConfigService.getCurrentSettings().embeddingQueryGlobalToken();

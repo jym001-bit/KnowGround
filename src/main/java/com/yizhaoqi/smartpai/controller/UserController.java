@@ -8,6 +8,7 @@ import com.yizhaoqi.smartpai.service.RateLimitService;
 import com.yizhaoqi.smartpai.service.UsageQuotaService;
 import com.yizhaoqi.smartpai.service.UserService;
 import com.yizhaoqi.smartpai.service.UserTokenService;
+import com.yizhaoqi.smartpai.service.DailyTokenGrantService;
 import com.yizhaoqi.smartpai.utils.JwtUtils;
 import com.yizhaoqi.smartpai.utils.LogUtils;
 import jakarta.servlet.http.HttpServletRequest;
@@ -48,6 +49,9 @@ public class UserController {
 
     @Autowired
     private UserTokenService userTokenService;
+
+    @Autowired
+    private DailyTokenGrantService dailyTokenGrantService;
 
     // 用户注册接口
     // 接收用户请求体中的用户名和密码，并调用用户服务进行注册
@@ -106,6 +110,8 @@ public class UserController {
             
             String token = jwtUtils.generateToken(username);
             String refreshToken = jwtUtils.generateRefreshToken(username);
+            userRepository.findByUsername(username).ifPresent(user ->
+                    dailyTokenGrantService.grantIfEligible(String.valueOf(user.getId())));
             LogUtils.logUserOperation(username, "LOGIN", "token_generation", "SUCCESS");
             monitor.end("登录成功");
             
@@ -182,6 +188,8 @@ public class UserController {
 
             User user = userRepository.findByUsername(username)
                     .orElseThrow(() -> new CustomException("User not found", HttpStatus.NOT_FOUND));
+
+            dailyTokenGrantService.grantIfEligible(String.valueOf(user.getId()));
 
             // 手动构建返回对象，不包含 password 字段
             Map<String, Object> displayUserData = new LinkedHashMap<>();
@@ -300,6 +308,8 @@ public class UserController {
 
             User user = userRepository.findByUsername(username)
                     .orElseThrow(() -> new CustomException("User not found", HttpStatus.NOT_FOUND));
+
+            dailyTokenGrantService.grantIfEligible(String.valueOf(user.getId()));
 
             return ResponseEntity.ok(Map.of(
                     "code", 200,

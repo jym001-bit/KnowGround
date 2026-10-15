@@ -144,6 +144,10 @@ public class UsageQuotaService {
         return TokenReservationBundle.of(budgetScope, userId, reservations);
     }
 
+    public TokenReservationBundle reserveExemptMetering(String scope, String userId) {
+        return TokenReservationBundle.noop(scope, userId);
+    }
+
     public void recordChatRequest(String userId) {
         if (!isQuotaManaged(userId)) {
             return;

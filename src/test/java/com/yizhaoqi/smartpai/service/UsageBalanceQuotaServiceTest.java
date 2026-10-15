@@ -20,6 +20,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.never;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.verifyNoInteractions;
+import com.yizhaoqi.smartpai.model.UserTokenRecord;
+import java.time.LocalDate;
 
 @ExtendWith(MockitoExtension.class)
 class UsageBalanceQuotaServiceTest {
@@ -77,5 +82,55 @@ class UsageBalanceQuotaServiceTest {
         assertTrue(reservation.noop());
         verify(userTokens, never()).hasEnoughLlmTokens("1", 1100);
         verify(userTokens, never()).consumeLlmTokens("1", 500);
+    }
+
+    @Test
+    void disabledDailyQuotaStillChargesBalanceWithoutWritingEmptyRedisKey() {
+        quota.properties.getLlm().setEnabled(false);
+        when(userTokens.hasEnoughLlmTokens("42", 800)).thenReturn(true);
+
+        UsageQuotaService.TokenReservation reservation = quota.reserveLlmTokens("42", 100, 700);
+        assertFalse(reservation.noop());
+        quota.abortReservation(reservation);
+        quota.settleReservation(reservation, 600);
+
+        verify(userTokens).consumeLlmTokens("42", 600);
+        verifyNoInteractions(redis);
+    }
+
+    @Test
+    void adminUsageIsRecordedButBalanceIsNotCharged() {
+        UsageQuotaService.TokenReservationBundle reservation = quota.reserveExemptMetering("llm", "1");
+        quota.settleReservation(reservation, 500);
+
+        verify(userTokens).recordExemptUsage("1", UserTokenRecord.TokenType.LLM, 500);
+        verify(userTokens, never()).consumeLlmTokens("1", 500);
+    }
+
+    @Test
+    void snapshotsShowTodaysConsumptionEvenWhenDailyCapIsDisabled() {
+        quota.properties.getLlm().setEnabled(false);
+        when(userTokens.getConsumedOnDay("42", LocalDate.now(), UserTokenRecord.TokenType.LLM)).thenReturn(123L);
+        when(userTokens.getRequestCountOnDay("42", LocalDate.now(), UserTokenRecord.TokenType.LLM)).thenReturn(2L);
+        when(userTokens.getLlmTokenBalance("42")).thenReturn(900L);
+
+        UsageQuotaService.QuotaView view = quota.getSnapshot("42").llm();
+
+        assertFalse(view.enabled());
+        assertEquals(123L, view.usedTokens());
+        assertEquals(900L, view.remainingTokens());
+        assertEquals(2L, view.requestCount());
+    }
+
+    @Test
+    void adminSnapshotShowsMeteredTokensWithoutBalance() {
+        when(quotaExemptionService.isExempt("1")).thenReturn(true);
+        when(userTokens.getConsumedOnDay("1", LocalDate.now(), UserTokenRecord.TokenType.LLM)).thenReturn(321L);
+
+        UsageQuotaService.QuotaView view = quota.getSnapshot("1").llm();
+
+        assertEquals(321L, view.usedTokens());
+        assertEquals(0L, view.remainingTokens());
+        verify(userTokens, never()).getLlmTokenBalance("1");
     }
 }

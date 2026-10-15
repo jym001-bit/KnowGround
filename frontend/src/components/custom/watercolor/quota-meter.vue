@@ -1,22 +1,23 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import MarkerBar from './marker-bar.vue';
-const props = withDefaults(defineProps<{ label: string; quota: Api.User.UsageQuota; seed?: number }>(), { seed: 1 });
+const props = withDefaults(defineProps<{ label: string; quota: Api.User.UsageQuota; seed?: number; admin?: boolean }>(), { seed: 1, admin: false });
 const ratio = computed(() => props.quota.limitTokens > 0 ? props.quota.usedTokens / props.quota.limitTokens : 0);
-const exhausted = computed(() => props.quota.enabled && props.quota.remainingTokens <= 0);
+const exhausted = computed(() => props.quota.enabled && props.quota.usedTokens >= props.quota.limitTokens);
 </script>
 
 <template>
-  <section class="quota-meter" :aria-label="`${label} 今日额度`">
-    <div class="quota-meter__heading"><h3>{{ label }}</h3><span>{{ quota.enabled ? '今日额度' : '未启用日配额' }}</span></div>
-    <div class="quota-meter__value">{{ quota.usedTokens.toLocaleString() }}<small>已用 tokens</small></div>
+  <section class="quota-meter" :aria-label="`${label} 今日消耗`">
+    <div class="quota-meter__heading"><h3>{{ label }}</h3><span>今日消耗</span></div>
+    <div class="quota-meter__value">{{ quota.usedTokens.toLocaleString() }}<small>tokens</small></div>
     <MarkerBar v-if="quota.enabled" :fraction="ratio" :label="`${label} 今日已用比例`" :seed="seed" :color="exhausted ? '#bd7c65' : '#ad9a7e'" />
     <div class="quota-meter__footer">
-      <span v-if="quota.enabled" :class="{ 'quota-meter__exhausted': exhausted }">{{ exhausted ? '今日额度已用完' : `剩余 ${quota.remainingTokens.toLocaleString()}` }}</span>
-      <span v-else>今日不设 Token 上限</span>
-      <span>{{ quota.requestCount.toLocaleString() }} 次请求</span>
+      <span v-if="quota.enabled" :class="{ 'quota-meter__exhausted': exhausted }">{{ exhausted ? '今日额度已用完' : `今日剩余 ${Math.max(0, quota.limitTokens - quota.usedTokens).toLocaleString()}` }}</span>
+      <span v-else-if="admin">管理员免扣余额</span>
+      <span v-else>余额 {{ quota.remainingTokens.toLocaleString() }}</span>
+      <span>今日 {{ quota.requestCount.toLocaleString() }} 次请求</span>
     </div>
-    <p v-if="quota.enabled" class="quota-meter__limit">每日上限 {{ quota.limitTokens.toLocaleString() }} tokens</p>
+    <p class="quota-meter__limit">{{ quota.enabled ? `每日上限 ${quota.limitTokens.toLocaleString()} tokens` : '无个人每日 Token 上限' }}</p>
   </section>
 </template>
 
