@@ -148,8 +148,8 @@ public class EmbeddingIndexMigrationService {
                 || ROLLING_BACK.equals(previous.getStatus()))) {
             throw new IllegalStateException("已有 Embedding 重建任务正在运行");
         }
-        var target = providers.getEmbeddingProvider(targetProvider);
-        var current = providers.getActiveProvider(ModelProviderConfigService.SCOPE_EMBEDDING);
+        var target = providers.getEmbeddingProvider(targetProvider);//目标
+        var current = providers.getActiveProvider(ModelProviderConfigService.SCOPE_EMBEDDING);//now
         String model = targetModel == null || targetModel.isBlank() ? target.model() : targetModel.trim();
         Integer dimension = targetDimension == null ? target.dimension() : targetDimension;
         if (dimension == null || dimension <= 0) {
@@ -160,11 +160,11 @@ public class EmbeddingIndexMigrationService {
             throw new IllegalArgumentException("目标模型与当前模型相同，无需重建");
         }
         String index = "knowledge_base_v" + VERSION_TIME.format(LocalDateTime.now())
-                + "_" + UUID.randomUUID().toString().substring(0, 8);
+                + "_" + UUID.randomUUID().toString().substring(0, 8);//新索引的创建 不会覆盖旧的
         ObjectNode root = (ObjectNode) mapper.readTree(mapping.getInputStream());
-        ((ObjectNode) root.path("mappings").path("properties").path("vector")).put("dims", dimension);
+        ((ObjectNode) root.path("mappings").path("properties").path("vector")).put("dims", dimension);//寻找JSON中的字段，修改维度
         String mappingJson = mapper.writeValueAsString(root);
-        es.indices().create(c -> c.index(index).withJson(new StringReader(mappingJson)));
+        es.indices().create(c -> c.index(index).withJson(new StringReader(mappingJson)));//向ES发出创建索引的请求
 
         EmbeddingIndexMigration job = new EmbeddingIndexMigration();
         job.setStatus(BUILDING);
@@ -177,7 +177,7 @@ public class EmbeddingIndexMigrationService {
         job.setPreviousModel(current.model());
         job.setPreviousDimension(current.dimension());
         job.setExpectedChunks(chunks.countDistinctChunks());
-        save(job);
+        save(job);//存储到MySQL
         worker.execute(() -> build(job.getTargetIndex(), requesterId));
         return job;
     }
@@ -186,8 +186,8 @@ public class EmbeddingIndexMigrationService {
         try {
             EmbeddingIndexMigration job = jobs.findById(1L).orElseThrow();
             indexAllChunks(job, job.getTargetIndex(), job.getTargetProvider(), job.getTargetModel(),
-                    job.getTargetDimension(), requesterId);
-            es.indices().refresh(r -> r.index(index));
+                    job.getTargetDimension(), requesterId);//真正 working
+            es.indices().refresh(r -> r.index(index));//刷新
             long count = es.count(c -> c.index(index)).count();
             if (count != chunks.countDistinctChunks()) {
                 throw new IllegalStateException("候选索引文档数不一致：ES=" + count + "，MySQL=" + chunks.countDistinctChunks());
@@ -201,7 +201,8 @@ public class EmbeddingIndexMigrationService {
     }
 
     /** The last pass runs while the Kafka listener is paused, then validates and switches. */
-    public synchronized EmbeddingIndexMigration switchIndex(List<Probe> probes, String requesterId) {
+    public synchronized EmbeddingIndexMigration
+    switchIndex(List<Probe> probes, String requesterId) {
         EmbeddingIndexMigration job = requiredJob(READY);
         if (probes == null || probes.isEmpty()) {
             throw new IllegalArgumentException("切换前至少提供一道带预期文件 MD5 的抽样问题");
@@ -220,7 +221,7 @@ public class EmbeddingIndexMigrationService {
             if (consumer == null || !consumer.isRunning()) {
                 throw new IllegalStateException("文件消费监听器未运行，无法确认追平阶段的写入边界");
             }
-            consumer.pause();
+            consumer.pause();//暂停接受消费
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
             while (!consumer.isContainerPaused() && System.nanoTime() < deadline) {
                 Thread.sleep(200);
@@ -240,11 +241,13 @@ public class EmbeddingIndexMigrationService {
                 throw new IllegalStateException("追平后文档数不一致：ES=" + actual + "，MySQL=" + expected);
             }
             validateProbes(job, probes, requesterId);
+            //完成目前手中的任务
             try (EmbeddingSwitchGate.Permit ignored = EmbeddingSwitchGate.write()) {
                 String active = activePhysicalIndex();
                 if (!active.equals(job.getPreviousIndex())) {
                     throw new IllegalStateException("当前别名已被其他任务切换");
                 }
+                //索引变更
                 es.indices().updateAliases(u -> u.actions(a -> a.remove(r -> r.index(active).alias(KnowledgeIndex.ALIAS)))
                         .actions(a -> a.add(add -> add.index(job.getTargetIndex()).alias(KnowledgeIndex.ALIAS))));
                 try {
@@ -296,7 +299,7 @@ public class EmbeddingIndexMigrationService {
                         row.getAnchorText(), result.vectors().get(i), result.modelVersion(), row.getUserId(),
                         row.getOrgTag(), row.isPublic()));
             }
-            elasticsearchService.bulkIndexToIndex(index, docs);
+            elasticsearchService.bulkIndexToIndex(index, docs);//写新的索引，目前仍没有上线
             job.setProcessedChunks(job.getProcessedChunks() + rows.size());
             save(job);
             if (!slice.hasNext()) {

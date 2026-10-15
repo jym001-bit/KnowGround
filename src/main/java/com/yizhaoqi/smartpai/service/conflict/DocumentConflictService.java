@@ -94,7 +94,7 @@ public class DocumentConflictService {
                 break;
             }
             for (Hit<EsDocument> ownHit : own.hits().hits()) {
-            EsDocument source = ownHit.source();
+            EsDocument source = ownHit.source();//表示当前正在处理的向量
             if (source == null || source.getVector() == null || source.getTextContent() == null
                     || source.getFileMd5() == null || source.getChunkId() == null) {
                 continue;
@@ -103,11 +103,12 @@ public class DocumentConflictService {
             for (float value : source.getVector()) {
                 vector.add(value);
             }
+            //KNN搜索
             SearchResponse<EsDocument> neighbors = esClient.search(s -> s.index(KnowledgeIndex.ALIAS)
                     .knn(k -> k.field("vector").queryVector(vector).k(KNN_WINDOW).numCandidates(100)
                             .filter(f -> f.bool(b -> {
-                                b.mustNot(n -> n.term(t -> t.field("fileMd5").value(fileMd5)));
-                                if (source.getModelVersion() != null && !source.getModelVersion().isBlank()) {
+                                b.mustNot(n -> n.term(t -> t.field("fileMd5").value(fileMd5)));//寻找其他文件
+                                if (source.getModelVersion() != null && !source.getModelVersion().isBlank()) {//只比较同一版本的
                                     b.filter(n -> n.term(t -> t.field("modelVersion").value(source.getModelVersion())));
                                 }
                                 return b;
@@ -124,7 +125,7 @@ public class DocumentConflictService {
                 if (similarity <= 0.9d) {
                     continue;
                 }
-                var difference = ConflictValues.compare(source.getTextContent(), other.getTextContent());
+                var difference = ConflictValues.compare(source.getTextContent(), other.getTextContent());//比较不同
                 if (difference.isEmpty()) {
                     continue;
                 }

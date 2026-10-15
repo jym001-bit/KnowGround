@@ -30,12 +30,14 @@ public class FileTaskOutboxService {
         if (file.getStatus() != FileUpload.STATUS_MERGING) {
             throw new IllegalStateException("文件已不处于合并状态");
         }
+        // 1. 更新 file_upload：文件已合并，等待向量化
         file.setStatus(FileUpload.STATUS_COMPLETED);
         file.setVectorizationStatus(FileUpload.VECTORIZATION_STATUS_PENDING);
         file.setVectorizationErrorMessage(null);
         file.setActualEmbeddingTokens(null);
         file.setActualChunkCount(null);
         files.save(file);
+        //保存状态
         saveTask(task);
     }
 

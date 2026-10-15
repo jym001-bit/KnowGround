@@ -76,8 +76,6 @@ public class SecurityConfig {
                             .requestMatchers("/chat/**", "/ws/**").permitAll()
                             // 允许登录注册接口
                             .requestMatchers("/api/v1/users/register", "/api/v1/users/login").permitAll()
-                            // 允许测试接口
-                            .requestMatchers("/api/v1/test/**").permitAll()
                             // LiteParse OCR 回调接口：可通过 aliyun.ocr.callback-token 进行轻量校验
                             .requestMatchers("/api/v1/internal/ocr/**").permitAll()
                             // 文件上传和下载相关接口 - 普通用户和管理员都可访问

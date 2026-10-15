@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Arrays;
 
 public class DotenvEnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
 
@@ -23,6 +24,10 @@ public class DotenvEnvironmentPostProcessor implements EnvironmentPostProcessor,
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+        // Tests must use application-test.yml rather than local development credentials from .env.
+        if (Arrays.stream(environment.getActiveProfiles()).anyMatch("test"::equalsIgnoreCase)) {
+            return;
+        }
         Path dotenvPath = Path.of(System.getProperty("user.dir"), DOTENV_FILE);
         if (!Files.isRegularFile(dotenvPath)) {
             return;

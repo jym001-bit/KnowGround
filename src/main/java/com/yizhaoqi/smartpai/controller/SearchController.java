@@ -52,6 +52,9 @@ public class SearchController {
         if (userId == null || userId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "请先登录后再搜索知识库");
         }
+        if (topK < 1 || topK > 20) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "topK 必须在 1 到 20 之间");
+        }
         LogUtils.PerformanceMonitor monitor = LogUtils.startPerformanceMonitor("HYBRID_SEARCH");
         try {
             LogUtils.logBusiness("HYBRID_SEARCH", userId != null ? userId : "anonymous", 

@@ -144,7 +144,7 @@ public class FileProcessingConsumer {
             );
             FileTaskHeartbeat.pulse();
             documentService.markVectorizationCompleted(task.getFileMd5(), vectorizationResult);
-            conflictService.submit(task.getFileMd5(), task.getUserId());
+            conflictService.submit(task.getFileMd5(), task.getUserId());//提交检测工作
             log.info("向量化完成，fileMd5: {}", task.getFileMd5());
         } catch (Exception e) {
             if (!isStale(e)) documentService.markVectorizationFailed(task.getFileMd5(), e);
