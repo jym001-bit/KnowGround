@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -19,6 +21,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import com.yizhaoqi.smartpai.utils.RequestDeadline;
 
 @Service
 public class LlmProviderRouter {
@@ -33,17 +38,20 @@ public class LlmProviderRouter {
     private final UsageQuotaService usageQuotaService;
     private final ModelProviderConfigService modelProviderConfigService;
     private final ObjectMapper objectMapper;
+    private final ModelCallGuard modelCallGuard;
 
     public LlmProviderRouter(AiProperties aiProperties,
                              RateLimitService rateLimitService,
                              UsageQuotaService usageQuotaService,
                              ModelProviderConfigService modelProviderConfigService,
-                             ObjectMapper objectMapper) {
+                             ObjectMapper objectMapper,
+                             ModelCallGuard modelCallGuard) {
         this.aiProperties = aiProperties;
         this.rateLimitService = rateLimitService;
         this.usageQuotaService = usageQuotaService;
         this.modelProviderConfigService = modelProviderConfigService;
         this.objectMapper = objectMapper;
+        this.modelCallGuard = modelCallGuard;
     }
 
     public StreamHandle streamResponse(String requesterId,
@@ -67,24 +75,38 @@ public class LlmProviderRouter {
         StreamUsageTracker usageTracker = new StreamUsageTracker(reservation, estimatedPromptTokens);
 
         try {
-            Disposable subscription = buildClient(provider)
-                    .post()
-                    .uri("/chat/completions")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(request)
-                    .retrieve()
-                    .bodyToFlux(String.class)
+            AtomicBoolean visible = new AtomicBoolean(false);
+            AtomicReference<ModelProviderConfigService.ActiveProviderView> usedProvider = new AtomicReference<>(provider);
+            Flux<String> response = modelCallGuard.flux("llm", provider.provider(), ModelCallQueue.Priority.ONLINE,
+                            () -> chatFlux(provider, request))
+                    .onErrorResume(error -> {
+                        if (visible.get()) return Flux.error(error);
+                        return modelProviderConfigService.getFallbackProvider(
+                                        ModelProviderConfigService.SCOPE_LLM, provider.provider())
+                                .map(backup -> {
+                                    usedProvider.set(backup);
+                                    Map<String, Object> backupRequest = buildRequest(backup.model(), userMessage,
+                                            context, history);
+                                    return modelCallGuard.flux("llm", backup.provider(), ModelCallQueue.Priority.ONLINE,
+                                            () -> chatFlux(backup, backupRequest));
+                                }).orElseGet(() -> Flux.error(error));
+                    });
+            Disposable subscription = response
                     .subscribe(
-                            chunk -> processChunk(chunk, usageTracker, onChunk),
+                            chunk -> processChunk(chunk, usageTracker, text -> {
+                                visible.set(true);
+                                onChunk.accept(text);
+                            }),
                             error -> {
-                                settleUsage(usageTracker);
+                                if (visible.get()) settleUsage(usageTracker);
+                                else abortStreamUsage(usageTracker);
                                 onError.accept(error);
                             },
                             () -> {
                                 settleUsage(usageTracker);
                                 logger.info("LLM 流式响应完成: provider={}, model={}, finishReason={}, promptTokens={}, completionTokens={}, responseChars={}",
-                                        provider.provider(),
-                                        provider.model(),
+                                        usedProvider.get().provider(),
+                                        usedProvider.get().model(),
                                         usageTracker.finishReason == null ? "unknown" : usageTracker.finishReason,
                                         usageTracker.promptTokens,
                                         usageTracker.completionTokens,
@@ -99,7 +121,10 @@ public class LlmProviderRouter {
                                 }
                             }
                     );
-            return new StreamHandle(subscription, () -> settleUsage(usageTracker));
+            return new StreamHandle(subscription, () -> {
+                if (visible.get()) settleUsage(usageTracker);
+                else abortStreamUsage(usageTracker);
+            });
         } catch (Exception exception) {
             usageQuotaService.abortReservation(reservation);
             throw exception;
@@ -186,14 +211,17 @@ public class LlmProviderRouter {
                 requesterId, estimatedPromptTokens, maxCompletionTokens);
 
         try {
-            String responseBody = buildClient(provider)
-                    .post()
-                    .uri("/chat/completions")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(request)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block(Duration.ofSeconds(90));
+            ModelCallQueue.Priority priority = RequestDeadline.currentNanos().isPresent()
+                    ? ModelCallQueue.Priority.ONLINE : ModelCallQueue.Priority.BACKGROUND;
+            String responseBody = modelCallGuard.mono("llm", provider.provider(), priority,
+                            () -> chatMono(provider, request))
+                    .onErrorResume(error -> modelProviderConfigService
+                            .getFallbackProvider(ModelProviderConfigService.SCOPE_LLM, provider.provider())
+                            .map(backup -> modelCallGuard.mono("llm", backup.provider(), priority,
+                                    () -> chatMono(backup, buildReActRequest(backup.model(), messages, tools,
+                                            maxCompletionTokens, false))))
+                            .orElseGet(() -> Mono.error(error)))
+                    .block(RequestDeadline.cap(Duration.ofMinutes(3)));
             ReActTurn turn = parseReActTurn(responseBody, estimatedPromptTokens);
             usageQuotaService.settleReservation(reservation, turn.promptTokens() + turn.completionTokens());
             logger.info("ReAct 回合完成: provider={}, model={}, finishReason={}, toolCalls={}, contentChars={}",
@@ -222,33 +250,54 @@ public class LlmProviderRouter {
         ReActStreamAccumulator accumulator = new ReActStreamAccumulator(reservation, estimatedPromptTokens);
 
         try {
-            Disposable subscription = buildClient(provider)
-                    .post()
-                    .uri("/chat/completions")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(request)
-                    .retrieve()
-                    .bodyToFlux(String.class)
+            AtomicBoolean visible = new AtomicBoolean(false);
+            AtomicReference<ReActStreamAccumulator> current = new AtomicReference<>(accumulator);
+            AtomicReference<ModelProviderConfigService.ActiveProviderView> usedProvider = new AtomicReference<>(provider);
+            Flux<String> response = modelCallGuard.flux("llm", provider.provider(), ModelCallQueue.Priority.ONLINE,
+                            () -> chatFlux(provider, request))
+                    .onErrorResume(error -> {
+                        if (visible.get()) return Flux.error(error);
+                        return modelProviderConfigService.getFallbackProvider(
+                                        ModelProviderConfigService.SCOPE_LLM, provider.provider())
+                                .map(backup -> {
+                                    logger.warn("LLM 主供应商失败，尚未输出内容，切换备用供应商: from={}, to={}",
+                                            provider.provider(), backup.provider());
+                                    current.set(new ReActStreamAccumulator(reservation, estimatedPromptTokens));
+                                    usedProvider.set(backup);
+                                    Map<String, Object> backupRequest = buildReActRequest(backup.model(), messages,
+                                            tools, maxCompletionTokens, true);
+                                    return modelCallGuard.flux("llm", backup.provider(), ModelCallQueue.Priority.ONLINE,
+                                            () -> chatFlux(backup, backupRequest));
+                                }).orElseGet(() -> Flux.error(error));
+                    });
+            Disposable subscription = response
                     .subscribe(
-                            chunk -> processReActStreamChunk(chunk, accumulator, onChunk),
+                            chunk -> processReActStreamChunk(chunk, current.get(), text -> {
+                                visible.set(true);
+                                onChunk.accept(text);
+                            }),
                             error -> {
                                 logProviderError("ReAct 流式回合调用失败", error);
-                                settleReActStreamUsage(accumulator);
+                                if (visible.get()) settleReActStreamUsage(current.get());
+                                else abortReActStreamUsage(current.get());
                                 onError.accept(error);
                             },
                             () -> {
-                                settleReActStreamUsage(accumulator);
-                                ReActTurn turn = accumulator.toTurn();
+                                settleReActStreamUsage(current.get());
+                                ReActTurn turn = current.get().toTurn();
                                 logger.info("ReAct 流式回合完成: provider={}, model={}, finishReason={}, toolCalls={}, contentChars={}",
-                                        provider.provider(),
-                                        provider.model(),
+                                        usedProvider.get().provider(),
+                                        usedProvider.get().model(),
                                         turn.finishReason(),
                                         turn.toolCalls().size(),
                                         turn.content().length());
                                 onComplete.accept(turn);
                             }
                     );
-            return new StreamHandle(subscription, () -> settleReActStreamUsage(accumulator));
+            return new StreamHandle(subscription, () -> {
+                if (visible.get()) settleReActStreamUsage(current.get());
+                else abortReActStreamUsage(current.get());
+            });
         } catch (Exception exception) {
             usageQuotaService.abortReservation(reservation);
             throw exception;
@@ -262,6 +311,30 @@ public class LlmProviderRouter {
             builder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + provider.apiKey());
         }
         return builder.build();
+    }
+
+    private Mono<String> chatMono(ModelProviderConfigService.ActiveProviderView provider, Map<String, Object> request) {
+        return buildClient(provider).post().uri("/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(request).retrieve().bodyToMono(String.class);
+    }
+
+    private Flux<String> chatFlux(ModelProviderConfigService.ActiveProviderView provider, Map<String, Object> request) {
+        return buildClient(provider).post().uri("/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(request).retrieve().bodyToFlux(String.class);
+    }
+
+    private void abortReActStreamUsage(ReActStreamAccumulator accumulator) {
+        if (!accumulator.settled) {
+            accumulator.settled = true;
+            usageQuotaService.abortReservation(accumulator.reservation);
+        }
+    }
+
+    private void abortStreamUsage(StreamUsageTracker tracker) {
+        if (!tracker.settled) {
+            tracker.settled = true;
+            usageQuotaService.abortReservation(tracker.reservation);
+        }
     }
 
     private void logProviderError(String message, Throwable error) {

@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yizhaoqi.smartpai.service.ModelProviderConfigService;
 import com.yizhaoqi.smartpai.service.FileTaskHeartbeat;
+import com.yizhaoqi.smartpai.service.ModelCallGuard;
+import com.yizhaoqi.smartpai.service.ModelCallQueue;
+import com.yizhaoqi.smartpai.utils.RequestDeadline;
 import com.yizhaoqi.smartpai.service.RateLimitService;
 import com.yizhaoqi.smartpai.service.UsageQuotaService;
 import org.slf4j.Logger;
@@ -14,7 +17,6 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import reactor.util.retry.Retry;
 
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
@@ -40,15 +42,18 @@ public class EmbeddingClient {
     private final RateLimitService rateLimitService;
     private final UsageQuotaService usageQuotaService;
     private final ModelProviderConfigService modelProviderConfigService;
+    private final ModelCallGuard modelCallGuard;
 
     public EmbeddingClient(ObjectMapper objectMapper,
                            RateLimitService rateLimitService,
                            UsageQuotaService usageQuotaService,
-                           ModelProviderConfigService modelProviderConfigService) {
+                           ModelProviderConfigService modelProviderConfigService,
+                           ModelCallGuard modelCallGuard) {
         this.objectMapper = objectMapper;
         this.rateLimitService = rateLimitService;
         this.usageQuotaService = usageQuotaService;
         this.modelProviderConfigService = modelProviderConfigService;
+        this.modelCallGuard = modelCallGuard;
     }
 
     @PostConstruct
@@ -110,7 +115,7 @@ public class EmbeddingClient {
                         : rateLimitService.reserveEmbeddingUploadUsage(normalizedRequesterId, sub);//预占用 估算
                 logger.debug("调用向量 API, 批次: {}-{} (size={})", start, end - 1, sub.size());
                 try {
-                    String response = callApiOnce(sub, provider);//调用API
+                    String response = callApiOnce(sub, provider, usageType);//调用API
                     EmbeddingApiResponse parsedResponse = parseEmbeddingResponse(response, sub);//解析
                     usageQuotaService.settleReservation(reservation, parsedResponse.totalTokens());//按实际用量结算
                     all.addAll(parsedResponse.vectors());
@@ -142,7 +147,8 @@ public class EmbeddingClient {
         }
     }
 
-    private String callApiOnce(List<String> batch, ModelProviderConfigService.ActiveProviderView provider) {
+    private String callApiOnce(List<String> batch, ModelProviderConfigService.ActiveProviderView provider,
+                               UsageType usageType) {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", provider.model());
         requestBody.put("input", batch);
@@ -155,16 +161,14 @@ public class EmbeddingClient {
                 provider.provider(), provider.model(), provider.dimension(), batch.size(),
                 batch.isEmpty() ? "空" : batch.get(0).substring(0, Math.min(50, batch.get(0).length())) + "...");
 
-        return buildClient(provider).post() //创建HTTP客户端
-                .uri("/embeddings")
-                .bodyValue(requestBody)
-                .retrieve()
-                .bodyToMono(String.class)
-                .retryWhen(Retry.fixedDelay(3, Duration.ofSeconds(1))
-                        .filter(e -> e instanceof WebClientResponseException)
-                        .doBeforeRetry(signal -> logger.warn("重试API调用 - 尝试: {}, 错误: {}",
-                                signal.totalRetries() + 1, signal.failure().getMessage())))
-                .block(Duration.ofSeconds(30));
+        return modelCallGuard.mono("embedding", provider.provider(),
+                        usageType == UsageType.QUERY ? ModelCallQueue.Priority.ONLINE : ModelCallQueue.Priority.BACKGROUND,
+                        () -> buildClient(provider).post()
+                                .uri("/embeddings")
+                                .bodyValue(requestBody)
+                                .retrieve()
+                                .bodyToMono(String.class))
+                .block(RequestDeadline.cap(Duration.ofMinutes(3)));
     }
 
     private WebClient buildClient(ModelProviderConfigService.ActiveProviderView provider) {

@@ -81,6 +81,16 @@ public class ModelProviderConfigService {
                 .orElseThrow(() -> new CustomException("未找到激活的模型配置: " + scope, HttpStatus.INTERNAL_SERVER_ERROR));
     }
 
+    /** Only configured, enabled providers with a usable key can be used as a live fallback. */
+    public Optional<ActiveProviderView> getFallbackProvider(String scope, String primaryProvider) {
+        return resolveScope(scope, currentSettings).providers().stream()
+                .filter(provider -> provider.enabled() && provider.hasApiKey())
+                .filter(provider -> !provider.provider().equals(primaryProvider))
+                .map(provider -> toActiveProvider(scope, provider))
+                .filter(provider -> provider.apiKey() != null && !provider.apiKey().isBlank())
+                .findFirst();
+    }
+
     /** Resolve an inactive embedding provider without changing the live query model. */
     public ActiveProviderView getEmbeddingProvider(String providerCode) {
         return currentSettings.embedding().providers().stream()

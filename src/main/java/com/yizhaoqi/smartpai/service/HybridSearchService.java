@@ -114,6 +114,7 @@ public class HybridSearchService {
             return retainAccessibleFiles(hybridSearch(query, userId, topK, permissionFilter), userDbId, userEffectiveTags);
         } catch (Exception e) {
             logger.error("带权限的混合搜索失败，降级为纯文本搜索", e);
+            if (!RequestDeadline.hasAtLeast(Duration.ofMillis(100))) return Collections.emptyList();
             return retainAccessibleFiles(safeTextOnlySearch(query, permissionFilter, topK, TEXT_ONLY_MIN_SCORE),
                     userDbId, userEffectiveTags);
         }
@@ -159,7 +160,13 @@ public class HybridSearchService {
                 CompletableFuture.supplyAsync(() -> recall(buildKnnRequest(queryVector, filter, window)), recallExecutor);
         // 等待时间取召回超时配置和问答请求剩余时间中较小的值
         Duration recallTimeout = RequestDeadline.cap(Duration.ofSeconds(properties.getRecallTimeoutSeconds()));
-        CompletableFuture.allOf(bm25Future, knnFuture).get(recallTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        try {
+            CompletableFuture.allOf(bm25Future, knnFuture).get(Math.max(1, recallTimeout.toMillis()), TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            bm25Future.cancel(true);
+            knnFuture.cancel(true);
+            throw e;
+        }
         List<Hit<EsDocument>> bm25Hits = bm25Future.join();
         List<Hit<EsDocument>> knnHits = knnFuture.join();
 

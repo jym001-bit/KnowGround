@@ -23,8 +23,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.yizhaoqi.smartpai.config.AiProperties;
 import com.yizhaoqi.smartpai.service.ModelProviderConfigService;
+import com.yizhaoqi.smartpai.service.ModelCallGuard;
+import com.yizhaoqi.smartpai.service.ModelCallQueue;
 import com.yizhaoqi.smartpai.service.UsageQuotaService;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 
 @Service
 public class DeepSeekClient {
@@ -35,6 +38,7 @@ public class DeepSeekClient {
     private final AiProperties aiProperties;
     private final UsageQuotaService usageQuotaService;
     private final ModelProviderConfigService modelProviderConfigService;
+    private final ModelCallGuard modelCallGuard;
     private final ObjectMapper objectMapper;
     private static final Logger logger = LoggerFactory.getLogger(DeepSeekClient.class);
     
@@ -43,7 +47,8 @@ public class DeepSeekClient {
                          @Value("${deepseek.api.model}") String model,
                          AiProperties aiProperties,
                          UsageQuotaService usageQuotaService,
-                         ModelProviderConfigService modelProviderConfigService) {
+                         ModelProviderConfigService modelProviderConfigService,
+                         ModelCallGuard modelCallGuard) {
         WebClient.Builder builder = WebClient.builder().baseUrl(apiUrl);
         
         // 只有当 API key 不为空时才添加 Authorization header
@@ -57,6 +62,7 @@ public class DeepSeekClient {
         this.aiProperties = aiProperties;
         this.usageQuotaService = usageQuotaService;
         this.modelProviderConfigService = modelProviderConfigService;
+        this.modelCallGuard = modelCallGuard;
         this.objectMapper = new ObjectMapper();
     }
     
@@ -79,12 +85,10 @@ public class DeepSeekClient {
         StreamUsageTracker usageTracker = new StreamUsageTracker(reservation, estimatedPromptTokens);
         
         try {
-            webClient.post()
-                    .uri("/chat/completions")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(request)
-                    .retrieve()
-                    .bodyToFlux(String.class)
+            modelCallGuard.flux("llm", "deepseek", ModelCallQueue.Priority.ONLINE,
+                            () -> webClient.post().uri("/chat/completions")
+                                    .contentType(MediaType.APPLICATION_JSON).bodyValue(request)
+                                    .retrieve().bodyToFlux(String.class))
                     .subscribe(
                         chunk -> processChunk(chunk, usageTracker, onChunk),
                         error -> {
@@ -181,16 +185,27 @@ public class DeepSeekClient {
             }
         };
 
-        Disposable subscription = summaryEndpoint.webClient().post()
-                .uri("/chat/completions")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(request)
-                .retrieve()
-                .bodyToFlux(String.class)
+        ModelCallQueue.Priority priority = com.yizhaoqi.smartpai.utils.RequestDeadline.currentNanos().isPresent()
+                ? ModelCallQueue.Priority.ONLINE : ModelCallQueue.Priority.BACKGROUND;
+        Flux<String> response = modelCallGuard.flux("llm", summaryEndpoint.provider(), priority,
+                        () -> summaryFlux(summaryEndpoint, request))
+                .onErrorResume(error -> {
+                    if (usageTracker.responseContent.length() > 0) return Flux.error(error);
+                    return modelProviderConfigService.getFallbackProvider(
+                                    ModelProviderConfigService.SCOPE_LLM, summaryEndpoint.provider())
+                            .map(backup -> {
+                                SummaryEndpoint endpoint = summaryEndpoint(backup);
+                                Map<String, Object> backupRequest = new HashMap<>(request);
+                                backupRequest.put("model", endpoint.model());
+                                return modelCallGuard.flux("llm", endpoint.provider(), priority,
+                                        () -> summaryFlux(endpoint, backupRequest));
+                            }).orElseGet(() -> Flux.error(error));
+                });
+        Disposable subscription = response
                 .subscribe(
                         chunk -> processChunk(chunk, usageTracker, chunkConsumer),
                         error -> {
-                            settleUsage(usageTracker);
+                            settleOrAbort(usageTracker);
                             summaryFuture.completeExceptionally(error);
                         },
                         () -> {
@@ -206,19 +221,20 @@ public class DeepSeekClient {
                 );
 
         try {
-            String summary = summaryFuture.get(90, TimeUnit.SECONDS);
+            String summary = summaryFuture.get(Math.max(1, com.yizhaoqi.smartpai.utils.RequestDeadline
+                    .cap(java.time.Duration.ofSeconds(90)).toMillis()), TimeUnit.MILLISECONDS);
             if (summary == null || summary.isBlank()) {
                 throw new IllegalStateException("DeepSeek 摘要流未返回有效内容");
             }
             return summary;
         } catch (TimeoutException e) {
             subscription.dispose();
-            settleUsage(usageTracker);
+            settleOrAbort(usageTracker);
             throw new RuntimeException("DeepSeek 摘要流式响应超时", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             subscription.dispose();
-            settleUsage(usageTracker);
+            settleOrAbort(usageTracker);
             throw new RuntimeException("DeepSeek 摘要流式响应被中断", e);
         } catch (ExecutionException e) {
             subscription.dispose();
@@ -234,16 +250,25 @@ public class DeepSeekClient {
         try {
             ModelProviderConfigService.ActiveProviderView provider =
                     modelProviderConfigService.getActiveProvider(ModelProviderConfigService.SCOPE_LLM);
-            WebClient.Builder builder = WebClient.builder()
-                    .baseUrl(ModelProviderConfigService.normalizeOpenAiCompatibleBaseUrl(provider.apiBaseUrl()));
-            if (provider.apiKey() != null && !provider.apiKey().isBlank()) {
-                builder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + provider.apiKey());
-            }
-            return new SummaryEndpoint(builder.build(), provider.model(), provider.provider());
+            return summaryEndpoint(provider);
         } catch (Exception exception) {
             logger.warn("无法读取活动 LLM Provider，generate_summary 内部摘要回退到 deepseek.* 配置: {}", exception.getMessage());
             return new SummaryEndpoint(webClient, model, "deepseek");
         }
+    }
+
+    private SummaryEndpoint summaryEndpoint(ModelProviderConfigService.ActiveProviderView provider) {
+        WebClient.Builder builder = WebClient.builder()
+                .baseUrl(ModelProviderConfigService.normalizeOpenAiCompatibleBaseUrl(provider.apiBaseUrl()));
+        if (provider.apiKey() != null && !provider.apiKey().isBlank()) {
+            builder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + provider.apiKey());
+        }
+        return new SummaryEndpoint(builder.build(), provider.model(), provider.provider());
+    }
+
+    private Flux<String> summaryFlux(SummaryEndpoint endpoint, Map<String, Object> request) {
+        return endpoint.webClient().post().uri("/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(request).retrieve().bodyToFlux(String.class);
     }
     
     private Map<String, Object> buildRequest(String userMessage, 
@@ -472,6 +497,16 @@ public class DeepSeekClient {
                 : usageQuotaService.estimateTextTokens(usageTracker.responseContent.toString());
 
         usageQuotaService.settleReservation(usageTracker.reservation, actualPromptTokens + actualCompletionTokens);
+    }
+
+    private void settleOrAbort(StreamUsageTracker tracker) {
+        if (tracker == null || tracker.settled) return;
+        if (tracker.responseContent.length() == 0) {
+            tracker.settled = true;
+            usageQuotaService.abortReservation(tracker.reservation);
+        } else {
+            settleUsage(tracker);
+        }
     }
 
     private static final class StreamUsageTracker {
