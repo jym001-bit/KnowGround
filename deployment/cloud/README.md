@@ -1,8 +1,10 @@
 # 知据云端部署运行手册
 
-> 云端主入口是 `https://jymcode.top/rag/`；纯 IP 入口继续可用。原 DuckDNS 服务器绑定已移除。本手册只描述云端实例；本机开发环境及原始数据仍保留。实际密码和模型密钥只在服务器 `/opt/knowground/.env.cloud`，该文件不入库。
+> 当前入口是 `https://knowground.jymcode.top/`，切换与回退清单见 [独立子域名部署](DEPLOY_KNOWGROUND_DOMAIN.md)。下文保留此前 `jymcode.top/rag/` 的部署记录，不应用于新入口更新。
 
-## 当前结构
+> 此前云端主入口是 `https://jymcode.top/rag/`；纯 IP 入口另行配置。原 DuckDNS 服务器绑定已移除。本手册保留此前部署记录；服务器实际状态需现场核实。实际密码和模型密钥只在服务器 `/opt/knowground/.env.cloud`，该文件不入库。
+
+## 此前结构
 
 | 入口或服务 | 位置 | 说明 |
 | --- | --- | --- |
@@ -13,7 +15,7 @@
 | 服务器面板 | `https://jymcode.top/server/` | Authelia 认证与 Beszel 监控 |
 | MySQL、Redis、Kafka、Elasticsearch | Docker 私有网络 | 不暴露到公网；RustFS 也只在本机回环地址映射 |
 
-仓库中云端编排是 [`compose.yaml`](compose.yaml)，后端镜像见 [`Dockerfile.api`](Dockerfile.api)，Elasticsearch IK 镜像见 [`es/Dockerfile`](es/Dockerfile)，当前完整 Caddy 配置见 [`Caddyfile.example`](Caddyfile.example)，新域名 RAG 路由模块见 [`Caddyfile.rag-domain`](Caddyfile.rag-domain)，纯 IP 配置见 [`Caddyfile.ip-http`](Caddyfile.ip-http)、[`Caddyfile.ip-https`](Caddyfile.ip-https) 和 [`Caddyfile.ip-sni-prefix`](Caddyfile.ip-sni-prefix)。云端配置样例在仓库根目录 [`.env.cloud.example`](../../.env.cloud.example)。本地 `docs/docker-compose.yaml` 不能用于这台 VPS。
+仓库中云端编排是 [`compose.yaml`](compose.yaml)，后端镜像见 [`Dockerfile.api`](Dockerfile.api)，Elasticsearch IK 镜像见 [`es/Dockerfile`](es/Dockerfile)。[`Caddyfile.example`](Caddyfile.example) 是独立子域名切换后的候选配置；旧 `/rag/` 路由模块保存在 [`Caddyfile.rag-domain`](Caddyfile.rag-domain) 供历史参考。纯 IP 配置见 [`Caddyfile.ip-http`](Caddyfile.ip-http)、[`Caddyfile.ip-https`](Caddyfile.ip-https) 和 [`Caddyfile.ip-sni-prefix`](Caddyfile.ip-sni-prefix)。云端配置样例在仓库根目录 [`.env.cloud.example`](../../.env.cloud.example)。本地 `docs/docker-compose.yaml` 不能用于这台 VPS。
 
 ## 先理解配置与连接
 

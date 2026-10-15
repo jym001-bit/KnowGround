@@ -11,7 +11,7 @@ http://23.252.124.29 {
         redir https://23.252.124.29{uri} 308
     }
 }
-# The direct IP entry is separate from jymcode.top.
+# The direct IP entry is separate from the domain sites.
 https://23.252.124.29 {
     tls /etc/caddy/ip-cert/fullchain.pem /etc/caddy/ip-cert/privkey.pem
     encode zstd gzip
@@ -113,43 +113,53 @@ jymcode.top {
             reverse_proxy unix//run/server-console/http.sock
         }
     }
+    handle {
+        error 404
+    }
 
+    handle_errors {
+        @not_found expression {err.status_code} == 404
+        handle @not_found {
+            root * /opt/knowground/error-pages
+            rewrite * /404.html
+            file_server
+        }
+        handle {
+            respond "{err.status_code} {err.status_text}"
+        }
+    }
+}
 
-    @rag_without_slash path /rag
-    redir @rag_without_slash /rag/ 308
+# KnowGround lives on its own hostname; jymcode.top keeps the server console only.
+knowground.jymcode.top {
+    encode zstd gzip
 
-    handle /rag/api/* {
+    handle /api/* {
         route {
-            @private_api path /rag/api/v1/test/* /rag/api/v1/internal/ocr/*
+            @private_api path /api/v1/test/* /api/v1/internal/ocr/*
             respond @private_api "Not Found" 404
-            uri strip_prefix /rag
             reverse_proxy 127.0.0.1:18081
         }
     }
 
-    handle /rag/proxy-ws/* {
-        uri strip_prefix /rag/proxy-ws
+    handle /proxy-ws/* {
+        uri strip_prefix /proxy-ws
         reverse_proxy 127.0.0.1:18081
     }
 
-    handle /rag/uploads/* {
+    handle /uploads/* {
         route {
             @non_read not method GET HEAD
             respond @non_read "Method Not Allowed" 405
-            uri strip_prefix /rag
             reverse_proxy 127.0.0.1:19000 {
                 header_up Host rustfs:9000
             }
         }
     }
 
-    handle_path /rag/* {
-        root * /opt/knowground/frontend/dist-rag
+    handle {
+        root * /opt/knowground/frontend/dist-knowground
         try_files {path} /index.html
         file_server
-    }
-
-    handle {
-        respond "Not Found" 404
     }
 }

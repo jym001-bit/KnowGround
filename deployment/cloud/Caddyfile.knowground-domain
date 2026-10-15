@@ -1,0 +1,32 @@
+knowground.jymcode.top {
+    encode zstd gzip
+
+    handle /api/* {
+        route {
+            @private_api path /api/v1/test/* /api/v1/internal/ocr/*
+            respond @private_api "Not Found" 404
+            reverse_proxy 127.0.0.1:18081
+        }
+    }
+
+    handle /proxy-ws/* {
+        uri strip_prefix /proxy-ws
+        reverse_proxy 127.0.0.1:18081
+    }
+
+    handle /uploads/* {
+        route {
+            @non_read not method GET HEAD
+            respond @non_read "Method Not Allowed" 405
+            reverse_proxy 127.0.0.1:19000 {
+                header_up Host rustfs:9000
+            }
+        }
+    }
+
+    handle {
+        root * /opt/knowground/frontend/dist-knowground
+        try_files {path} /index.html
+        file_server
+    }
+}

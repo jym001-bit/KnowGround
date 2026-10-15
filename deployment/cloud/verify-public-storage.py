@@ -49,7 +49,7 @@ def main() -> None:
     )
     url = signed.replace(internal, public, 1)
     if url.startswith("/"):
-        url = os.environ.get("KNOWGROUND_PUBLIC_ORIGIN", "https://jymcode.top").rstrip("/") + url
+        url = os.environ.get("KNOWGROUND_PUBLIC_ORIGIN", "https://knowground.jymcode.top").rstrip("/") + url
     with urllib.request.urlopen(url, timeout=20) as response:
         payload = response.read()
     if len(payload) != int(size_text) or hashlib.sha256(payload).hexdigest() != expected_hash:

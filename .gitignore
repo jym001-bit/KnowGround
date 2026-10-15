@@ -31,6 +31,9 @@ replay_pid*
 *.local
 dist
 dist-ssr
+/frontend/dist-rag/
+/frontend/dist-knowground/
+/.pnpm-store/
 node_modules
 .idea/
 /target

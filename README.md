@@ -191,7 +191,7 @@ pnpm dev
 
 ## 部署和项目结构
 
-仓库提供 [Docker 云端部署手册](deployment/cloud/README.md)、[Compose 编排](deployment/cloud/compose.yaml) 和 [Dockerfile](deployment/cloud/Dockerfile.api)。云端示例使用 Caddy 提供 HTTPS 与反向代理，MySQL/Redis/Kafka/Elasticsearch 运行在容器私有网络，原文件放在 RustFS。部署前先准备 `.env.cloud`，检查域名、证书、端口、数据卷及密钥；不要照搬作者的服务器地址和数据迁移记录。
+仓库提供 [独立子域名部署与回退清单](deployment/cloud/DEPLOY_KNOWGROUND_DOMAIN.md)、[此前云端部署记录](deployment/cloud/README.md)、[Compose 编排](deployment/cloud/compose.yaml) 和 [Dockerfile](deployment/cloud/Dockerfile.api)。当前云端入口是 `https://knowground.jymcode.top/`；主域名 `jymcode.top` 仅保留服务器管理入口。云端使用 Caddy 提供 HTTPS 与反向代理，MySQL/Redis/Kafka/Elasticsearch 运行在容器私有网络，原文件放在 RustFS。部署前先准备 `.env.cloud`，检查域名、证书、端口、数据卷及密钥；不要照搬作者的服务器地址和数据迁移记录。
 
 ```text
 KnowGround/
