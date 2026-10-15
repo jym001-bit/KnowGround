@@ -15,6 +15,7 @@
 
 - [功能与使用场景](#功能与使用场景)
 - [一次问答如何完成](#一次问答如何完成)
+- [本轮迭代与技术文档](#本轮迭代与技术文档)
 - [系统架构](#系统架构)
 - [技术栈](#技术栈)
 - [本地启动](#本地启动)
@@ -30,10 +31,15 @@
 | --- | --- | --- |
 | 文档知识库 | 上传、查看、预览和管理文档；处理完成后参与问答 | `frontend/src/views/knowledge-base/`、`DocumentService` |
 | 有来源的问答 | 提问、查看回答及其引用，点击来源核对原文 | `frontend/src/views/chat/`、`ChatHandler` |
-| 混合检索 | 同时利用语义相似度与文本匹配，并在检索后检查文件权限 | `HybridSearchService` |
+| 混合检索 | BM25 与 KNN 并行召回，RRF 按名次融合，候选经 gte-rerank-v2 重排；失败时退回 RRF | `HybridSearchService`、`RrfFusion`、`RerankClient` |
+| 上下文与父子检索 | 可选为分块生成上下文说明；命中小分块后补入相邻原文，引用仍指向命中分块 | `ChunkContextService`、`ParentContextExpander` |
+| 文档冲突审核 | 相似分块候选检测、可选 LLM 确认和管理员决策 | `DocumentConflictService`、`frontend/src/views/document-conflicts/` |
+| 离线评测 | 固定题集计算 Recall@K、MRR@K；评委评分和人工复核 | `scripts/rag_eval.py` |
+| 可靠入库与任务恢复 | Outbox 投递、消费租约和幂等、心跳恢复、死信记录 | `FileTaskOutboxService`、`FileTaskRecoveryService` |
+| 模型容错与问答预算 | 供应商限流、熔断、超时、有限重试与备用 LLM；ReAct 共用 120 秒预算 | `ModelCallGuard`、`ModelCallQueue`、`ChatHandler` |
 | 对话记录 | 保存会话与历史消息，继续已有话题 | `ConversationService`、`frontend/src/views/chat-history/` |
 | 用户与模型管理 | 账号、组织标签、模型配置和用量查看 | `frontend/src/views/` 对应页面 |
-| 用量控制 | 普通用户有赠送额度、每日提问次数和 Token 上限 | `UsageQuotaService` 等服务及环境配置 |
+| 用量控制 | 普通用户受每日 Token 额度和分钟频率限制，提问及 Embedding 查询没有每日次数上限 | `UsageQuotaService`、`RateLimitService` 等服务及环境配置 |
 
 当前可上传的文档扩展名由 `FileTypeValidationService` 控制，包含 `pdf`、`doc/docx`、`xls/xlsx`、`ppt/pptx`、`txt`、`md`、`html`、`csv` 等。不同格式的解析效果取决于原文件质量；扫描件还需要 OCR。图片、音视频、压缩包不能直接作为知识文档上传。
 
@@ -47,11 +53,26 @@
   <img src="docs/images/rag-flow.svg" alt="知据 RAG 流程：文档经过上传、解析分块、向量化和索引；问题经过混合检索、权限复核后生成带来源的回答" width="1000" />
 </p>
 
-**入库阶段**：文件上传到 MinIO（云端使用兼容 S3 接口的 RustFS），元数据写入 MySQL。Kafka 消息驱动异步解析；后端抽取文字并分块，调用 Embedding 模型生成向量，把可检索内容写入 Elasticsearch。PDF 解析支持 LiteParse；OCR 是可选能力。文件上传成功与“已经可以检索”是两个不同状态。
+**入库阶段**：文件上传到 MinIO（云端使用兼容 S3 接口的 RustFS），元数据写入 MySQL。文件状态和 Outbox 消息在同一事务提交，随后投递 Kafka；消费者凭任务 ID 和租约处理解析、分块、向量化与 ES 入库。可选的上下文检索会在向量化前给分块补充说明。文件上传成功与“已经可以检索”是两个不同状态。PDF 解析支持 LiteParse；OCR 是可选能力。
 
-**问答阶段**：用户问题先生成查询向量。Elasticsearch 使用 KNN 向量召回和文本匹配，并执行 BM25 rescore；如果查询向量生成失败，代码会尝试纯文本检索。检索时按公开/本人私有过滤，返回结果前还会根据 MySQL 文件记录再次核对权限。随后 Agent 的知识库搜索工具把片段交给 LLM，回答可带引用编号、文件名及页码等信息。聊天通过 WebSocket 交互，历史记录保存在 MySQL。
+**问答阶段**：用户问题先生成查询向量。Elasticsearch 并行执行 BM25 和 KNN 召回；RRF 按名次融合，再把前 50 条候选交给配置的 rerank 模型。rerank 不可用或时间不足时使用 RRF 顺序；向量生成失败时尝试纯文本检索。检索按本人、公开和有效组织标签过滤，返回结果前还会根据 MySQL 文件记录再次核对权限和冲突停用状态。Agent 工具把命中小分块和有上限的相邻原文交给 LLM，回答可带引用编号、文件名及页码。聊天通过 WebSocket 交互，历史记录保存在 MySQL。
 
-> **关于 rerank**：当前代码有 Elasticsearch 的 **BM25 rescore**，但没有独立的 Cross-Encoder / 专用 Rerank 模型。不要把两者混为一谈。
+> **关于开关与凭据**：上下文说明默认关闭，以免旧上传立即产生额外 LLM 费用；父子检索和 rerank 默认开启。rerank 需配置 `SEARCH_RERANK_API_KEY`，或由已激活的阿里云 Embedding 配置提供有效密钥；仅有代码和默认模型名不代表实际服务已可用。
+
+## 本轮迭代与技术文档
+
+下表按当前 `master` 的实现整理。具体算法、状态流转、配置和边界条件请读对应技术文档。
+
+| 主题 | 当前实现 | 详细文档 |
+| --- | --- | --- |
+| 双路召回与上下文检索 | BM25 + KNN → RRF → rerank；可选上下文说明；命中后扩展相邻分块 | [RAG 检索技术说明](docs/rag-retrieval.md) |
+| 离线 RAG 评测 | 检索和生成分别评估；评委与人工复核 | [离线评测操作手册](docs/rag-evaluation.md) |
+| 冲突检测与审核 | 异步候选、可选 LLM 确认、管理员审核与检索停用 | [文档冲突检测](docs/document-conflict-detection.md) |
+| Embedding 升级 | 版本索引构建、追平、抽样验证、ES 别名切换与回滚 | [索引迁移与回滚](docs/embedding-index-migration.md) |
+| 异步文件处理 | Outbox、消费幂等、心跳恢复、废弃上传清理 | [可靠性与恢复](docs/file-processing-reliability.md) |
+| 模型与 Agent 稳定性 | 令牌桶、有限重试、熔断、备用 LLM、请求总截止时间 | [模型调用容错](docs/model-call-resilience.md) |
+
+部署前需要按环境核对[数据库迁移清单](docs/README.md#数据库迁移清单)；`ddl-auto=update` 的开发环境与手工迁移的生产环境不是同一种操作方式。
 
 ## 系统架构
 
@@ -66,7 +87,7 @@
 | Vue 前端 | 登录、知识库、聊天与管理页面 | `http://localhost:9527` |
 | Spring Boot API | 认证、上传、检索、聊天、额度与权限 | `http://localhost:8081/api/v1` |
 | MySQL | 用户、文件元数据、文档分块、会话与业务记录 | `.env` 中的 `SPRING_DATASOURCE_URL` |
-| Redis | 临时状态、缓存及用量相关计数 | `SPRING_DATA_REDIS_HOST/PORT` |
+| Redis | 临时状态、缓存、用量计数和 Lua 令牌桶 | `SPRING_DATA_REDIS_HOST/PORT` |
 | Kafka | 文档处理的异步消息 | `SPRING_KAFKA_BOOTSTRAP_SERVERS` |
 | Elasticsearch | 文本与向量索引 | `ELASTICSEARCH_HOST/PORT` |
 | MinIO / RustFS | 原始文档对象存储 | `MINIO_ENDPOINT` |
@@ -83,7 +104,7 @@
 | 数据与队列 | MySQL 8、Redis、Kafka |
 | 搜索与存储 | Elasticsearch、MinIO；云端对象存储为 RustFS |
 | 文档处理 | Apache Tika、LiteParse；按需配置 OCR |
-| 模型接入 | DeepSeek 兼容接口、DashScope 兼容 Embedding 接口；可在模型配置页管理提供方 |
+| 模型接入 | OpenAI 兼容 LLM/Embedding 接口、DashScope rerank、Resilience4j；可在模型配置页管理提供方 |
 
 ## 本地启动
 
@@ -91,7 +112,7 @@
 
 需要 JDK 17、Maven、Node.js **18.20+**、pnpm **8.7+**，以及可访问的 MySQL、Redis、Kafka、Elasticsearch、MinIO。还需要可用的 LLM 和 Embedding API Key 才能完整体验解析与问答。
 
-仓库提供开发用的 [`docs/docker-compose.yaml`](docs/docker-compose.yaml)，但它不是开箱即用的公网编排；请先检查其中端口、密码、卷和服务版本。也可以自行运行这些依赖。Redis/Kafka 如果部署在虚拟机里，`.env` 必须写宿主机**实际可达**的虚拟机地址，不能机械填写 `localhost`。作者当前本机环境的 Redis 与 Kafka 已启动；新使用者仍需按自己的环境配置。
+仓库提供开发用的 [`docs/docker-compose.yaml`](docs/docker-compose.yaml)，但它不是开箱即用的公网编排；请先检查其中端口、密码、卷和服务版本。也可以自行运行这些依赖。Redis/Kafka 如果部署在虚拟机里，`.env` 必须写宿主机**实际可达**的虚拟机地址，不能机械填写 `localhost`。启动前请自行确认依赖实际可用，不要根据文档假定它们正在运行。
 
 ### 2. 配置后端
 
@@ -141,7 +162,7 @@ pnpm dev
 
 浏览器访问 [`http://localhost:9527/#/login`](http://localhost:9527/#/login)。本地 Vite 开发配置默认连接 `http://localhost:8081/api/v1`；如果后端地址不同，修改 `frontend/.env.test` 的 `VITE_SERVICE_BASE_URL` 和 WebSocket 地址。
 
-> Windows 用户注意：前后端需要分别保持运行。修改 Java 代码后需重新编译并重启后端；浏览器刷新不能替换仍占用 8081 端口的旧进程。
+> Windows 用户注意：前后端需要分别保持运行。IDE 启动的后端通常支持热加载；修改 Java 代码后先执行 `mvn -q -DskipTests compile`，确认实际运行版本仍旧时再重启后端。浏览器刷新不能替换仍占用 8081 端口的旧进程。
 
 ## 第一次使用
 
@@ -157,13 +178,12 @@ pnpm dev
 
 ## 权限与用量
 
-当前文件可见性按**公开**和**个人私有**区分：公开文件允许有权限的用户检索；私有文件只允许上传者通过知识问答访问。组织标签用于其他管理逻辑，**不等于组织内自动共享私有文件**。检索索引中的旧记录也要通过数据库权限再次复核。既有历史对话若引用了当前无权访问的资料，读取历史时会隐藏相关回答；这不会自动物理删除旧记录。
+检索权限包含**上传者本人、公开文档和用户有效组织标签**三种来源；组织标签的上级继承也参与匹配。应以实际文件组织标签和用户关系核对可见范围，不能把“私有”简单理解成绝对仅本人可见。检索索引中的旧记录还要通过数据库再次复核。管理员冲突决策停用的文档会从检索结果排除。既有历史对话若引用了当前无权访问的资料，读取历史时会隐藏相关回答；这不会自动物理删除旧记录。
 
-`.env.example` 提供的公网试运行额度如下。实际运行值以部署环境变量为准。
+`.env.example` 提供的公网试运行额度如下。实际运行值以部署环境变量为准。提问与 Embedding 查询没有每日次数上限，仍受分钟频率限制。
 
 | 项目 | 新用户赠送 | 每日上限 |
 | --- | ---: | ---: |
-| 提问次数 | — | 10 次 |
 | LLM Token | 20,000 | 10,000 |
 | Embedding Token | 10,000 | 3,000 |
 
