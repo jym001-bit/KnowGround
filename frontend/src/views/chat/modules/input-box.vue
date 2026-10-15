@@ -363,19 +363,19 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative shrink-0 bg-white px-4 pb-3 pt-2 dark:bg-[#1c1c1c]">
+  <div class="relative shrink-0 bg-container px-4 pb-3 pt-2">
     <div
-      class="pointer-events-none absolute inset-x-0 h-6 from-white/95 to-transparent bg-gradient-to-t -top-6 dark:from-[#1c1c1c]/95"
+      class="pointer-events-none absolute inset-x-0 h-6 from-container/95 to-transparent bg-gradient-to-t -top-6"
     />
     <div
-      class="chat-input-shell mx-auto max-w-[960px] w-full flex items-end gap-2 rounded-2xl bg-white px-3.5 py-2.5 dark:bg-[#1f1f1f]"
+      class="chat-input-shell mx-auto max-w-[960px] w-full flex items-end gap-2 rounded-2xl bg-container px-3.5 py-2.5"
     >
       <textarea
         ref="inputRef"
         v-model.trim="input.message"
         placeholder="向知识库提问，获取有来源的答案…"
         aria-label="向知据提问"
-        class="max-h-32 min-h-6 w-full flex-1 resize-none border-none bg-transparent py-1 text-16px color-#26382e caret-[rgb(var(--primary-color))] outline-none placeholder:text-#68776d dark:color-#e1e1e1 dark:placeholder:text-#a1b0a5"
+        class="max-h-32 min-h-6 w-full flex-1 resize-none border-none bg-transparent py-1 text-16px color-[rgb(var(--base-text-color))] caret-[rgb(var(--primary-color))] outline-none placeholder:text-[rgb(var(--text-color-3))]"
         @keydown="handShortcut"
       />
       <NButton
@@ -399,7 +399,7 @@ onUnmounted(() => {
           {{ cooldownText }}
         </span>
       </div>
-      <span class="text-11px color-#888">Enter 发送 · Shift+Enter 换行</span>
+      <span class="text-11px color-[rgb(var(--text-color-3))]">Enter 发送 · Shift+Enter 换行</span>
     </div>
   </div>
 </template>
@@ -407,10 +407,10 @@ onUnmounted(() => {
 <style scoped>
 .chat-input-shell {
   min-height: 74px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
+  border: 1px solid rgb(var(--border-color) / 0.8);
   box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 6px 18px rgba(15, 23, 42, 0.04);
+    0 1px 2px rgb(var(--base-text-color) / 0.04),
+    0 6px 18px rgb(var(--base-text-color) / 0.04);
   transition:
     border-color 0.18s ease,
     box-shadow 0.18s ease,
@@ -420,12 +420,7 @@ onUnmounted(() => {
 .chat-input-shell:focus-within {
   border-color: rgb(var(--primary-color) / 0.38);
   box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 8px 24px rgba(15, 23, 42, 0.06);
-}
-
-.dark .chat-input-shell {
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: none;
+    0 1px 2px rgb(var(--base-text-color) / 0.04),
+    0 8px 24px rgb(var(--base-text-color) / 0.06);
 }
 </style>

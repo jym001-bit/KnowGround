@@ -1,6 +1,7 @@
 @import './reset.css';
 @import './nprogress.css';
 @import './transition.css';
+@import './typography.css';
 
 :root {
   --notice-background: #f8f5ee;
@@ -49,7 +50,6 @@ html {
   overflow-x: hidden;
 }
 
-body { font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
 button, input, textarea { font: inherit; }
 
 body { font-size: 16px; }

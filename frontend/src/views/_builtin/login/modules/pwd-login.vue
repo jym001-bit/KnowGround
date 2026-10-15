@@ -126,10 +126,10 @@ async function handleSubmit() {
   gap: 12px;
 }
 .login-actions :deep(.n-button) {
-  height: 48px;
+  height: 52px;
   color: #f8f5ee;
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 600;
   transition:
     transform 180ms ease,
     box-shadow 180ms ease;
@@ -143,12 +143,27 @@ async function handleSubmit() {
   transform: translateY(-1px);
   box-shadow: 0 8px 22px rgb(93 82 66 / 13%);
 }
+.login-actions :deep(.n-button--primary-type) {
+  background: #665943;
+  border-color: #665943;
+}
+.login-actions :deep(.n-button--primary-type:hover),
+.login-actions :deep(.n-button--primary-type:focus-visible) {
+  background: #504532;
+  border-color: #504532;
+}
 .login-actions :deep(.register-button),
 .login-actions :deep(.register-button:hover),
 .login-actions :deep(.register-button:focus-visible) {
-  color: #625b51;
-  background: #f8f5ee;
-  border: 1px solid #d8d0c3;
+  color: #51483c;
+  background: transparent;
+  border: 1px solid #bdb3a4;
+}
+.dark .login-actions :deep(.register-button),
+.dark .login-actions :deep(.register-button:hover),
+.dark .login-actions :deep(.register-button:focus-visible) {
+  color: #e7ded0;
+  border-color: #756a5b;
 }
 .login-arrow {
   margin-left: 12px;
@@ -159,8 +174,9 @@ async function handleSubmit() {
 }
 .login-form :deep(.n-input),
 .login-actions :deep(.n-button) {
-  border-radius: 8px;
+  border-radius: 14px;
 }
+.login-form :deep(.n-input) { min-height: 52px; }
 .login-form :deep(.n-form-item-label) {
   font-size: 14px;
   padding-bottom: 7px;

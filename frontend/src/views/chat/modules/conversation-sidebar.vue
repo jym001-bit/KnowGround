@@ -55,7 +55,7 @@ function formatDate(dateStr?: string) {
 
 <template>
   <div
-    class="conversation-panel relative h-full shrink-0 flex flex-col overflow-hidden border-r border-#ded7ca bg-#f1ece3 transition-[width] duration-200 ease-out dark:border-#ffffff0f dark:bg-#ffffff05"
+    class="conversation-panel relative h-full shrink-0 flex flex-col overflow-hidden transition-[width] duration-200 ease-out"
     :data-collapsed="collapsed"
     :class="collapsed ? 'w-0 min-w-0 border-r-0' : 'w-[260px] min-w-[260px]'"
   >
@@ -78,29 +78,23 @@ function formatDate(dateStr?: string) {
       </div>
 
       <!-- Tabs -->
-      <div class="mx-4 mb-2 flex rounded-lg bg-[rgb(var(--border-color)/0.15)] p-0.5 dark:bg-[#FFFFFF0A]">
-        <div
-          class="flex-1 cursor-pointer rounded-md px-3 py-1.5 text-center text-14px font-500 transition-all"
-          :class="
-            activeTab === 'active'
-              ? 'bg-#f8f5ee text-[rgb(var(--primary-color))] shadow-sm dark:bg-[#FFFFFF14] dark:text-(--primary-color)'
-              : 'text-#666 dark:text-#999'
-          "
+      <div class="session-tabs mx-4 mb-2 flex rounded-lg p-0.5">
+        <button
+          type="button"
+          class="session-tab flex-1 cursor-pointer rounded-md px-3 py-1.5 text-center text-14px font-500 transition-all"
+          :class="{ 'is-active': activeTab === 'active' }"
           @click="setActiveTab('active')"
         >
           活跃
-        </div>
-        <div
-          class="flex-1 cursor-pointer rounded-md px-3 py-1.5 text-center text-14px font-500 transition-all"
-          :class="
-            activeTab === 'archived'
-              ? 'bg-#f8f5ee text-[rgb(var(--primary-color))] shadow-sm dark:bg-[#FFFFFF14] dark:text-(--primary-color)'
-              : 'text-#666 dark:text-#999'
-          "
+        </button>
+        <button
+          type="button"
+          class="session-tab flex-1 cursor-pointer rounded-md px-3 py-1.5 text-center text-14px font-500 transition-all"
+          :class="{ 'is-active': activeTab === 'archived' }"
           @click="setActiveTab('archived')"
         >
           已归档
-        </div>
+        </button>
       </div>
 
       <!-- List -->
@@ -112,38 +106,26 @@ function formatDate(dateStr?: string) {
               class="flex flex-col items-center justify-center gap-3 py-16"
             >
               <icon-material-symbols:chat-outline-rounded class="text-36px color-#ccc dark:color-#444" />
-              <span class="text-15px color-#aaa">{{ activeTab === 'active' ? '暂无对话记录' : '暂无归档对话' }}</span>
+              <span class="empty-session-label text-15px">{{ activeTab === 'active' ? '暂无对话记录' : '暂无归档对话' }}</span>
             </div>
 
             <div
               v-for="session in filteredSessions"
               :key="session.conversationId"
-              class="group mx-1 mb-0.5 flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2.5 transition-all"
-              :class="
-                session.conversationId === conversationId
-                  ? 'bg-[rgb(var(--primary-color)/0.08)]'
-                  : 'hover:bg-[rgb(var(--border-color)/0.3)] dark:hover:bg-[#FFFFFF08]'
-              "
+              class="session-row group mx-1 mb-0.5 flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2.5 transition-all"
+              :class="{ 'is-current': session.conversationId === conversationId }"
               @click="handleSelect(session.conversationId)"
             >
               <div
-                class="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-15px"
-                :class="
-                  session.conversationId === conversationId
-                    ? 'bg-[rgb(var(--primary-color)/0.12)] text-[rgb(var(--primary-color))]'
-                    : 'bg-[rgb(var(--border-color)/0.2)] text-#999 dark:bg-[#FFFFFF0A]'
-                "
+                class="session-icon shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-15px"
               >
                 <icon-material-symbols:chat-outline-rounded />
               </div>
               <div class="min-w-0 flex-1">
-                <div
-                  class="truncate text-15px font-500"
-                  :class="session.conversationId === conversationId ? 'text-[rgb(var(--primary-color))]' : ''"
-                >
+                <div class="session-title truncate text-15px font-500">
                   {{ session.title }}
                 </div>
-                <div class="text-13px color-#aaa">{{ formatDate(session.updatedAt) }}</div>
+                <div class="session-date text-13px">{{ formatDate(session.updatedAt) }}</div>
               </div>
 
               <!-- Action button -->
@@ -184,19 +166,41 @@ function formatDate(dateStr?: string) {
 
 <style scoped>
 .conversation-panel {
-  background: #f5f7f2;
-  border-right: 1px solid #e6eae2;
+  --conversation-text: rgb(var(--base-text-color));
+  --conversation-muted: rgb(var(--text-color-2));
+  --conversation-border: rgb(var(--border-color));
+  --conversation-surface: rgb(var(--container-bg-color));
+  --conversation-subtle: rgb(var(--layout-bg-color));
+  background: var(--conversation-surface);
+  border-right: 1px solid var(--conversation-border);
+  color: var(--conversation-text);
 }
-.dark .conversation-panel {
-  background: #222923;
-  border-color: #364039;
+.session-tabs { background: var(--conversation-subtle); }
+.session-tab { border: 0; background: transparent; color: var(--conversation-muted); }
+.session-tab.is-active {
+  background: var(--conversation-surface);
+  color: var(--conversation-text);
+  box-shadow: 0 1px 4px rgb(var(--base-text-color) / 0.1);
+}
+.session-row:hover { background: rgb(var(--primary-color) / 0.06); }
+.session-row.is-current { background: rgb(var(--primary-color) / 0.12); }
+.session-icon { background: rgb(var(--primary-color) / 0.1); color: var(--conversation-muted); }
+.session-row.is-current .session-icon { background: rgb(var(--primary-color) / 0.18); color: rgb(var(--primary-color)); }
+.session-title { color: var(--conversation-text); }
+.session-row.is-current .session-title { color: rgb(var(--primary-color)); font-weight: 600; }
+.session-date, .empty-session-label { color: var(--conversation-muted); }
+.conversation-panel :deep(.n-button--primary-type) { background: rgb(var(--primary-color) / 0.12); color: rgb(var(--primary-color)); }
+.conversation-panel :deep(.n-button--primary-type:hover) { background: rgb(var(--primary-color) / 0.2); color: rgb(var(--primary-color)); }
+.session-row:focus-visible, .session-tab:focus-visible {
+  outline: 2px solid rgb(var(--primary-color));
+  outline-offset: -2px;
 }
 @media (max-width: 900px) {
   .conversation-panel[data-collapsed='false'] {
     position: absolute;
     inset: 0 auto 0 0;
     z-index: 30;
-    box-shadow: 12px 0 32px #132f2420;
+    box-shadow: 12px 0 32px rgb(var(--base-text-color) / 0.12);
   }
 }
 

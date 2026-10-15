@@ -150,7 +150,7 @@ const isRegisterModule = computed(
   --brand-paper: #eae5da;
   background: var(--paper);
   color: var(--ink);
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--kg-font-sans);
   position: relative;
   min-height: 100svh;
 }
@@ -178,7 +178,7 @@ const isRegisterModule = computed(
 .brand-panel::after { display: none; }
 .brand-heading { position: relative; z-index: 2; width: min(680px, 100%); margin: 0; animation: content-arrive .6s ease-out both; }
 .brand-heading h1 { margin: 0; font-size: clamp(48px, 4.5vw, 76px); font-weight: 560; line-height: 1.18; letter-spacing: -.075em; }
-.brand-heading h1 em { font-family: "Iowan Old Style", "Songti SC", "Noto Serif CJK SC", Georgia, serif; font-style: normal; font-weight: 500; color: #7b7163; letter-spacing: -.07em; }
+.brand-heading h1 em { font-family: var(--kg-font-sans); font-style: normal; font-weight: 500; color: #7b7163; letter-spacing: -.025em; }
 .rag-progress { position: relative; z-index: 2; width: min(760px, 100%); height: 62px; margin: 28px auto 0; }
 .rag-track { position: absolute; top: 5px; left: 35px; right: 35px; height: 2px; background: #cfc5b6; }
 .rag-track-fill { display: block; width: 100%; height: 100%; background: #968771; transform: scaleX(0); transform-origin: left center; animation: rag-fill 8s linear infinite; }
@@ -190,15 +190,39 @@ const isRegisterModule = computed(
 .rag-step:first-child i { background: #8e806d; border-color: #8e806d; }
 .form-panel { position: relative; min-width: 0; width: min(410px, calc(100% - 90px)); padding-top: 112px; padding-bottom: 70px; align-self: center; justify-self: center; animation: content-arrive .6s .07s ease-out both; }
 .register-stage .form-panel { width: min(650px, calc(100% - 64px)); }
-.form-heading h2 { margin-bottom: 38px; font-size: 38px; font-weight: 610; letter-spacing: -.055em; }
-.form-panel :deep(.n-form-item-label) { font-size: 14px; padding-bottom: 7px; }
-.form-panel :deep(.n-input) { background: #f1ede4; border: 1px solid #ddd5c8; }
-.form-panel :deep(.n-input__input-el) { color: #554e44; }
-.form-panel :deep(.n-form-item-label) { color: #6b655b; }
+.form-heading h2 { margin-bottom: 34px; font-size: 38px; font-weight: 610; letter-spacing: -.055em; }
+.form-panel :deep(.n-form-item-label) { color: #514b42; font-size: 14px; font-weight: 600; padding-bottom: 9px; }
+.form-panel :deep(.n-input) {
+  background: #fffdf8;
+  border: 1px solid #d7d0c3;
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgb(69 56 38 / 4%);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+.form-panel :deep(.n-input:hover) { border-color: #a89a85; }
+.form-panel :deep(.n-input:focus-within) {
+  border-color: #74634d;
+  box-shadow: 0 0 0 3px rgb(116 99 77 / 15%);
+}
+.form-panel :deep(.n-input__input-el) { color: #342f29; }
+.form-panel :deep(.n-input__placeholder) { color: #777169; }
+.form-panel :deep(.n-input__input-el::placeholder) { color: #777169; opacity: 1; }
+.form-panel :deep(.n-input__prefix),
+.form-panel :deep(.n-input__suffix) { color: #5e5a52; }
+.form-panel :deep(.n-checkbox__label) { color: #49443c; }
 .dark .login-scene { --ink: #e8e2d8; --muted: #afa598; --paper: #171716; --brand-paper: #22211f; }
 .dark .brand-panel { background: #23221f; border-color: #34312b; }
 .dark .brand-heading h1 em { color: #c9bea9; }
-.dark .form-panel :deep(.n-input) { background: #32302b; border-color: #494338; }
+.dark .form-panel :deep(.n-form-item-label),
+.dark .form-panel :deep(.n-checkbox__label) { color: #dcd5c9; }
+.dark .form-panel :deep(.n-input) { background: #292823; border-color: #655d50; box-shadow: none; }
+.dark .form-panel :deep(.n-input:hover) { border-color: #a99a83; }
+.dark .form-panel :deep(.n-input:focus-within) { border-color: #c5b296; box-shadow: 0 0 0 3px rgb(197 178 150 / 20%); }
+.dark .form-panel :deep(.n-input__input-el) { color: #f2ece3; }
+.dark .form-panel :deep(.n-input__input-el::placeholder),
+.dark .form-panel :deep(.n-input__placeholder),
+.dark .form-panel :deep(.n-input__prefix),
+.dark .form-panel :deep(.n-input__suffix) { color: #b8ae9e; }
 .dark .rag-step { color: #c8beb1; }
 .dark .rag-track { background: #6c6256; }
 .dark .rag-step i { border-color: #a59988; }

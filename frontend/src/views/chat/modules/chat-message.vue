@@ -5,6 +5,7 @@ import { router } from '@/router';
 import { request } from '@/service/request';
 import { formatDate } from '@/utils/common';
 import { VueMarkdownIt } from '@/vendor/vue-markdown-shiki';
+import ReferenceSources from './reference-sources.vue';
 defineOptions({ name: 'ChatMessage' });
 
 const props = defineProps<{
@@ -83,6 +84,21 @@ const toolStatusLabels: Record<Api.Chat.AgentToolEvent['status'], string> = {
 };
 
 const toolEvents = computed(() => props.msg.toolEvents || []);
+
+const citedReferences = computed(() => {
+  const numbers = [...new Set(Array.from((props.msg.content || '').matchAll(/来源#(\d+):/g), match => Number(match[1])))];
+  return numbers.flatMap(referenceNumber => {
+    const detail = props.msg.referenceMappings?.[String(referenceNumber)];
+    if (!detail?.fileName) return [];
+    return [{
+      referenceNumber,
+      fileName: detail.fileName,
+      fileMd5: detail.fileMd5,
+      pageNumber: detail.pageNumber,
+      snippet: (detail.evidenceSnippet || detail.matchedChunkText || '').slice(0, 220)
+    }];
+  });
+});
 
 function getToolLabel(tool: string) {
   return toolNameLabels[tool] || tool;
@@ -396,6 +412,7 @@ async function handleSourceFileClick(fileInfo: {
     </NText>
     <div v-else-if="msg.role === 'assistant'" class="answer-body mt-2 pl-12" @click="handleContentClick">
       <VueMarkdownIt :content="content" />
+      <ReferenceSources :references="citedReferences" @open="handleSourceFileClick" />
     </div>
     <NText v-else-if="msg.role === 'user'" class="ml-12 mt-2 text-4">{{ content }}</NText>
     <NDivider class="ml-12 w-[calc(100%-3rem)] mb-0! mt-2!" />
@@ -440,18 +457,18 @@ async function handleSourceFileClick(fileInfo: {
 .answer-body :deep(.markdown-body) { font-size: 17px; line-height: 1.85; }
 
 :deep(.source-file-link) {
-  color: #1890ff;
+  color: rgb(var(--primary-color));
   cursor: pointer;
   text-decoration: underline;
   transition: color 0.2s;
 
   &:hover {
-    color: #40a9ff;
+    color: rgb(var(--base-text-color));
     text-decoration: none;
   }
 
   &:active {
-    color: #096dd9;
+    color: rgb(var(--primary-color));
   }
 }
 

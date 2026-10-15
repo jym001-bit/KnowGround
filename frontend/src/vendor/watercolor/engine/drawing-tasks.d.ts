@@ -1,0 +1,1 @@
+export function renderCompleteWatercolorBox(x: number, y: number, width: number, height: number, options?: { seed?: number; color?: string; paper?: string; opacity?: number; endScatter?: number }): string;

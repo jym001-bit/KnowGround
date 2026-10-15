@@ -578,7 +578,7 @@ function closePreview() {
 
     .state-copy strong {
       @apply text-lg text-stone-800;
-      font-family: 'Avenir Next', 'Segoe UI', sans-serif;
+      font-family: var(--kg-font-sans);
     }
 
     .insight-rail {

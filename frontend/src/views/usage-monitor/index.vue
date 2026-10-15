@@ -121,10 +121,20 @@ async function submitRateLimits() {
   }
 
   rateLimitSaving.value = true;
+  const settings = cloneRateLimitSettings(rateLimits.value);
+  // 后端旧接口仍要求这两个字段有效；每日查询次数已不参与限流。
+  settings.embeddingQueryRequest.dayMax = Math.max(
+    settings.embeddingQueryRequest.dayMax,
+    settings.embeddingQueryRequest.minuteMax
+  );
+  settings.embeddingQueryRequest.dayWindowSeconds = Math.max(
+    settings.embeddingQueryRequest.dayWindowSeconds,
+    settings.embeddingQueryRequest.minuteWindowSeconds
+  );
   const { error, data } = await request<Api.Admin.RateLimitSettings>({
     url: '/admin/rate-limits',
     method: 'put',
-    data: cloneRateLimitSettings(rateLimits.value)
+    data: settings
   });
 
   if (!error && data) {
@@ -170,7 +180,7 @@ const { domRef: trendChartRef, updateOptions } = useEcharts<ECOption>(() => ({
 watch([overview, trendWindow], async () => {
   const trends = overview.value?.trends || [];
   await updateOptions(() => ({
-    color: ['#287c65', '#99b89b', '#587889', '#839592', '#bac5c1'],
+    color: ['#8c806e', '#b8aa95', '#716b60', '#a69e91', '#d0c8bb'],
     tooltip: {
       trigger: 'axis'
     },
@@ -202,8 +212,8 @@ watch([overview, trendWindow], async () => {
     series: [
       {
         name: 'LLM Tokens',
-        itemStyle: { color: '#287c65' },
-        lineStyle: { color: '#287c65' },
+        itemStyle: { color: '#8c806e' },
+        lineStyle: { color: '#8c806e' },
         type: 'line',
         smooth: true,
         showSymbol: false,
@@ -212,8 +222,8 @@ watch([overview, trendWindow], async () => {
       },
       {
         name: 'Embedding Tokens',
-        itemStyle: { color: '#94b099' },
-        lineStyle: { color: '#94b099' },
+        itemStyle: { color: '#b8aa95' },
+        lineStyle: { color: '#b8aa95' },
         type: 'line',
         smooth: true,
         showSymbol: false,
@@ -226,7 +236,7 @@ watch([overview, trendWindow], async () => {
         yAxisIndex: 1,
         barMaxWidth: 18,
         itemStyle: {
-          color: '#547889', opacity: 0.4
+          color: '#716b60', opacity: 0.4
         },
         data: trends.map((item) => item.chatRequestCount)
       },
@@ -236,7 +246,7 @@ watch([overview, trendWindow], async () => {
         yAxisIndex: 1,
         barMaxWidth: 18,
         itemStyle: {
-          color: '#839592', opacity: 0.32
+          color: '#a69e91', opacity: 0.32
         },
         data: trends.map((item) => item.llmRequestCount)
       },
@@ -246,7 +256,7 @@ watch([overview, trendWindow], async () => {
         yAxisIndex: 1,
         barMaxWidth: 18,
         itemStyle: {
-          color: '#bac5c1', opacity: 0.22
+          color: '#d0c8bb', opacity: 0.22
         },
         data: trends.map((item) => item.embeddingRequestCount)
       }
@@ -510,6 +520,7 @@ onMounted(() => {
 
             <div class="limit-card">
               <div class="limit-title">Embedding 查询</div>
+              <p class="limit-label">每日查询次数不限；每日 Token 额度仍然生效。</p>
               <div class="limit-grid">
                 <div>
                   <div class="limit-label">单用户分钟次数</div>
@@ -519,18 +530,6 @@ onMounted(() => {
                   <div class="limit-label">分钟窗口秒数</div>
                   <NInputNumber
                     v-model:value="rateLimits.embeddingQueryRequest.minuteWindowSeconds"
-                    :min="1"
-                    class="w-full"
-                  />
-                </div>
-                <div>
-                  <div class="limit-label">单用户日次数</div>
-                  <NInputNumber v-model:value="rateLimits.embeddingQueryRequest.dayMax" :min="1" class="w-full" />
-                </div>
-                <div>
-                  <div class="limit-label">日窗口秒数</div>
-                  <NInputNumber
-                    v-model:value="rateLimits.embeddingQueryRequest.dayWindowSeconds"
                     :min="1"
                     class="w-full"
                   />
@@ -574,10 +573,10 @@ onMounted(() => {
 </template>
 <style scoped>
 .usage-dashboard {
-  --dash-text: #23372d;
-  --dash-muted: #647267;
-  --dash-line: #dfe5df;
-  --dash-card: #fff;
+  --dash-text: rgb(var(--base-text-color));
+  --dash-muted: rgb(var(--text-color-2));
+  --dash-line: rgb(var(--border-color));
+  --dash-card: rgb(var(--container-bg-color));
   padding: 24px;
   overflow-y: auto;
   color: var(--dash-text);
@@ -613,7 +612,7 @@ onMounted(() => {
 }
 .metric-card {
   border: 1px solid var(--dash-line);
-  background: linear-gradient(180deg, var(--dash-card), #f3f6f1);
+  background: linear-gradient(180deg, var(--dash-card), rgb(var(--layout-bg-color) / 0.48));
   border-radius: 14px;
   padding: 20px;
 }
@@ -622,9 +621,9 @@ onMounted(() => {
   place-items: center;
   width: 30px;
   height: 30px;
-  background: #eef3ea;
-  border: 1px solid #dce6d8;
-  color: #487153;
+  background: rgb(var(--primary-color) / 0.1);
+  border: 1px solid rgb(var(--primary-color) / 0.16);
+  color: rgb(var(--primary-color));
   border-radius: 8px;
   margin-bottom: 12px;
 }
@@ -703,7 +702,7 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 500;
   color: var(--dash-muted);
-  background: #f6f8f4;
+  background: rgb(var(--layout-bg-color) / 0.72);
   text-align: left;
   padding: 12px 14px;
 }
@@ -720,10 +719,10 @@ onMounted(() => {
   place-items: center;
   width: 30px;
   height: 30px;
-  background: #edf3e8;
-  border: 1px solid #dfe8db;
+  background: rgb(var(--primary-color) / 0.1);
+  border: 1px solid rgb(var(--primary-color) / 0.16);
   border-radius: 8px;
-  color: #3e6d4a;
+  color: rgb(var(--primary-color));
   margin-right: 10px;
 }
 .table-empty {
@@ -802,18 +801,6 @@ onMounted(() => {
   padding: 14px;
   border-radius: 10px;
   margin-bottom: 16px;
-}
-.dark .usage-dashboard {
-  --dash-text: #e6eee4;
-  --dash-muted: #abb9aa;
-  --dash-line: #354536;
-  --dash-card: #202a22;
-}
-.dark .metric-card {
-  background: linear-gradient(180deg, #263328, #202a22);
-}
-.dark .ranking-table th {
-  background: #28372a;
 }
 @media (max-width: 1100px) {
   .metric-grid {

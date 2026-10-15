@@ -87,7 +87,7 @@ function useSuggestion(text: string) {
     <div class="flex h-0 flex-1 flex-col">
       <!-- Date filter in header -->
       <Teleport defer to="#header-extra">
-        <div v-if="!showEmpty" class="flex items-center px-4">
+        <div v-if="!showEmpty" class="chat-date-filter flex items-center px-4">
           <NForm :model="params" label-placement="left" :show-feedback="false" inline>
             <NFormItem label="时间" size="small">
               <NDatePicker v-model:value="range" type="daterange" clearable size="small" />
@@ -140,6 +140,9 @@ function useSuggestion(text: string) {
 </template>
 
 <style scoped>
+.chat-date-filter :deep(.n-form-item-label) { color: rgb(var(--text-color-2)); }
+.chat-date-filter :deep(.n-base-selection-placeholder) { color: rgb(var(--text-color-3)); }
+.chat-date-filter :deep(.n-input__input-el::placeholder) { color: rgb(var(--text-color-3)); opacity: 1; }
 .knowledge-welcome {
   flex: 1;
   min-height: 0;
@@ -154,7 +157,7 @@ function useSuggestion(text: string) {
   display: flex;
   gap: 8px;
   align-items: center;
-  color: #6d8077;
+  color: rgb(var(--text-color-2));
   font-size: 10px;
   letter-spacing: 2px;
   margin-bottom: 24px;
@@ -171,8 +174,8 @@ function useSuggestion(text: string) {
   margin-bottom: 20px;
 }
 .knowledge-welcome h1 {
-  color: #20382d;
-  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  color: rgb(var(--base-text-color));
+  font-family: var(--kg-font-sans);
   font-weight: 500;
   font-size: clamp(24px, 2.6vw, 38px);
   text-align: center;
@@ -182,7 +185,7 @@ function useSuggestion(text: string) {
   color: #8c806e;
 }
 .knowledge-welcome > p {
-  color: #526559;
+  color: rgb(var(--text-color-2));
   margin: 12px 0 32px;
   font-size: 16px;
 }
@@ -194,9 +197,9 @@ function useSuggestion(text: string) {
   max-width: 690px;
 }
 .suggestion-card {
-  border: 1px solid #e4e9e3;
+  border: 1px solid rgb(var(--border-color));
   border-radius: 12px;
-  background: #fafbf8;
+  background: rgb(var(--container-bg-color));
   padding: 18px;
   text-align: left;
   cursor: pointer;
@@ -205,7 +208,7 @@ function useSuggestion(text: string) {
     transform 0.2s;
 }
 .suggestion-card:hover {
-  border-color: #7ca996;
+  border-color: rgb(var(--primary-color) / 0.56);
   transform: translateY(-3px);
 }
 .suggestion-card:focus-visible {
@@ -215,7 +218,7 @@ function useSuggestion(text: string) {
 .suggestion-number {
   display: flex;
   justify-content: space-between;
-  color: #82988c;
+  color: rgb(var(--text-color-3));
   font-size: 14px;
   margin-bottom: 22px;
 }
@@ -228,32 +231,16 @@ function useSuggestion(text: string) {
   display: block;
   font-size: 14px;
   margin-top: 8px;
-  color: #59695f;
+  color: rgb(var(--text-color-2));
   line-height: 1.6;
 }
 .welcome-library {
   margin-top: 24px;
   font-size: 15px;
-  color: #526559;
+  color: rgb(var(--text-color-2));
 }
 .welcome-library:hover {
   color: #8c806e;
-}
-.dark .suggestion-card {
-  background: #242c27;
-  border-color: #3b473f;
-}
-.dark .knowledge-welcome h1 {
-  color: #f0f5ed;
-}
-.dark .knowledge-welcome h1 span {
-  color: #74bda6;
-}
-.dark .knowledge-welcome > p,
-.dark .suggestion-card small,
-.dark .welcome-library,
-.dark .welcome-kicker {
-  color: #a4b5aa;
 }
 @media (max-width: 640px) {
   .knowledge-welcome {

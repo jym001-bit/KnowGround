@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, h } from 'vue';
 import { NTag } from 'naive-ui';
+import QuotaMeter from '@/components/custom/watercolor/quota-meter.vue';
 const { userInfo } = storeToRefs(useAuthStore());
 
 const tags = ref<Api.OrgTag.Mine>({
@@ -29,6 +30,7 @@ const usage = ref<Api.User.UsageSnapshot>({
 });
 
 const loading = ref(false);
+const usageLoaded = ref(false);
 
 // Token 记录相关变量
 const tokenRecords = ref<Api.User.TokenRecord[]>([]);
@@ -54,8 +56,9 @@ const getPersonalData = async () => {
     tags.value = orgData;
   }
 
-  if (!usageError) {
+  if (!usageError && usageData) {
     usage.value = usageData;
+    usageLoaded.value = true;
   }
 
   // 获取 Token 记录
@@ -207,7 +210,7 @@ const tokenRecordColumns = computed(() => [
 <template>
   <NSpin :show="loading">
     <div class="flex-cc">
-      <NCard class="min-h-400px min-w-600px w-70vw card-wrapper" :segmented="{ content: true, footer: 'soft' }">
+      <NCard class="personal-card min-h-400px card-wrapper" :segmented="{ content: true, footer: 'soft' }">
         <template #header>
           <div class="flex items-center gap-4">
             <NAvatar size="large">
@@ -221,26 +224,11 @@ const tokenRecordColumns = computed(() => [
         </template>
         <NScrollbar class="max-h-60vh">
           <div class="flex flex-col gap-4 p-4">
-            <div class="grid gap-4 md:grid-cols-2">
-              <NCard size="small" embedded class="quota-card">
-                <div class="text-sm font-semibold text-stone-700">LLM Token</div>
-                <div v-if="usage.llm.enabled" class="mt-3 flex flex-col gap-2 text-sm text-stone-500">
-                  <div>已用 {{ usage.llm.usedTokens.toLocaleString() }} / {{ usage.llm.limitTokens.toLocaleString() }}</div>
-                  <div>剩余 {{ usage.llm.remainingTokens.toLocaleString() }}</div>
-                  <div>请求 {{ usage.llm.requestCount.toLocaleString() }} 次</div>
-                </div>
-                <div v-else class="mt-3 text-sm text-stone-400">当前未启用配额</div>
-              </NCard>
-              <NCard size="small" embedded class="quota-card">
-                <div class="text-sm font-semibold text-stone-700">Embedding Token</div>
-                <div v-if="usage.embedding.enabled" class="mt-3 flex flex-col gap-2 text-sm text-stone-500">
-                  <div>已用 {{ usage.embedding.usedTokens.toLocaleString() }} / {{ usage.embedding.limitTokens.toLocaleString() }}</div>
-                  <div>剩余 {{ usage.embedding.remainingTokens.toLocaleString() }}</div>
-                  <div>请求 {{ usage.embedding.requestCount.toLocaleString() }} 次</div>
-                </div>
-                <div v-else class="mt-3 text-sm text-stone-400">当前未启用配额</div>
-              </NCard>
+            <div v-if="usageLoaded" class="grid gap-4 md:grid-cols-2">
+              <QuotaMeter label="LLM Token" :quota="usage.llm" :seed="2" />
+              <QuotaMeter label="Embedding Token" :quota="usage.embedding" :seed="7" />
             </div>
+            <NEmpty v-else-if="!loading" description="暂时无法获取额度数据" />
 
             <div class="flex flex-wrap gap-4">
             <NCard
@@ -310,11 +298,9 @@ const tokenRecordColumns = computed(() => [
 
 <style scoped lang="scss">
 :deep(.n-card__content) {
-  flex: none m !important;
+  flex: none !important;
   height: fit-content;
 }
 
-.quota-card {
-  border-radius: 16px;
-}
+.personal-card { width: min(1120px, 100%); min-width: 0; }
 </style>

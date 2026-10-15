@@ -244,6 +244,7 @@ export function getNaiveTheme(colors: App.Theme.ThemeColor, recommended = false)
 
   const theme: GlobalThemeOverrides = {
     common: {
+      fontFamily: 'var(--kg-font-sans)',
       fontSize: '16px',
       fontSizeSmall: '14px',
       fontSizeMedium: '16px',

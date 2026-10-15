@@ -27,7 +27,7 @@ const sidebarCollapsed = ref(window.innerWidth < 900);
         </header>
         <button
           v-show="sidebarCollapsed"
-          class="absolute left-3 top-3 z-20 h-9 w-9 inline-flex items-center justify-center rounded-xl bg-white text-#666 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_4px_12px_rgba(15,23,42,0.08)] ring-1 ring-#0f172a14 transition-all duration-150 active:scale-95 hover:scale-105 dark:bg-#262626 dark:text-#bbb hover:text-[rgb(var(--primary-color))] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4),0_4px_12px_rgba(0,0,0,0.4)] dark:ring-#ffffff14"
+          class="absolute left-3 top-3 z-20 h-9 w-9 inline-flex items-center justify-center rounded-xl bg-container text-[rgb(var(--text-color-2))] shadow-[0_1px_2px_rgba(82,72,54,0.06),0_4px_12px_rgba(82,72,54,0.08)] ring-1 ring-[rgb(var(--base-text-color)/.08)] transition-all duration-150 active:scale-95 hover:scale-105 hover:text-[rgb(var(--primary-color))] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4),0_4px_12px_rgba(0,0,0,0.4)] dark:ring-[rgb(var(--base-text-color)/.08)]"
           aria-label="展开对话列表"
           @click="sidebarCollapsed = false"
         >
@@ -47,7 +47,7 @@ const sidebarCollapsed = ref(window.innerWidth < 900);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #e7ebe51f;
+  border-bottom: 1px solid rgb(var(--border-color));
   gap: 12px;
 }
 .workspace-heading.with-toggle {
@@ -60,11 +60,11 @@ const sidebarCollapsed = ref(window.innerWidth < 900);
 .workspace-heading div > span {
   margin-left: 14px;
   font-size: 11px;
-  color: #869087;
+  color: rgb(var(--text-color-2));
 }
 .workspace-heading a {
   font-size: 12px;
-  color: #8c806e;
+  color: rgb(var(--primary-color));
 }
 @media (max-width: 640px) {
   .knowledge-workspace {
