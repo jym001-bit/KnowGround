@@ -1,0 +1,48 @@
+.form-panel :deep(.login-form .n-input) {
+  width: 100%;
+  height: 52px;
+  box-sizing: border-box;
+  background: #f8f5ee;
+  border-color: #bfb5a7;
+  box-shadow: none;
+}
+
+.form-panel :deep(.login-form .n-input:focus-within) {
+  border-width: 2px;
+  border-color: #74634d;
+  outline: none;
+  box-shadow: none;
+}
+
+.form-panel :deep(.login-form .n-input .n-input__state-border) {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.form-panel :deep(.login-form .n-input__input-el) {
+  background: transparent;
+}
+
+.form-panel :deep(.login-form .n-input__input-el:-webkit-autofill) {
+  -webkit-box-shadow: 0 0 0 1000px #f8f5ee inset !important;
+  -webkit-text-fill-color: #342f29;
+  caret-color: #342f29;
+}
+
+:global(html.dark .form-panel .login-form .n-input) {
+  background: #292823;
+  border-color: #655d50;
+  box-shadow: none;
+}
+
+:global(html.dark .form-panel .login-form .n-input:focus-within) {
+  border-color: #c5b296;
+  outline-color: #c5b296;
+  box-shadow: none;
+}
+
+:global(html.dark .form-panel .login-form .n-input__input-el:-webkit-autofill) {
+  -webkit-box-shadow: 0 0 0 1000px #292823 inset !important;
+  -webkit-text-fill-color: #f2ece3;
+  caret-color: #f2ece3;
+}

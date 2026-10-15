@@ -8,6 +8,7 @@ import co.elastic.clients.elasticsearch.core.DeleteByQueryRequest;
 import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 import co.elastic.clients.elasticsearch.core.bulk.BulkResponseItem;
 import com.yizhaoqi.smartpai.entity.EsDocument;
+import com.yizhaoqi.smartpai.config.KnowledgeIndex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,13 +33,21 @@ public class ElasticsearchService {
      * @param documents 文档列表，每个文档都将被索引到Elasticsearch中
      */
     public void bulkIndex(List<EsDocument> documents) {
+        bulkIndexToIndex(KnowledgeIndex.ALIAS, documents);
+    }
+
+    /** Write candidate vectors to a physical version index without affecting live traffic. */
+    public void bulkIndexToIndex(String indexName, List<EsDocument> documents) {
+        if (documents.isEmpty()) {
+            return;
+        }
         try {
             logger.info("开始批量索引文档到Elasticsearch，文档数量: {}", documents.size());
             
             // 将文档列表转换为批量操作列表，每个文档都对应一个索引操作
             List<BulkOperation> bulkOperations = documents.stream()
                     .map(doc -> BulkOperation.of(op -> op.index(idx -> idx
-                            .index("knowledge_base") // 指定索引名称
+                            .index(indexName)
                             .id(doc.getId()) // 使用文档的ID作为Elasticsearch中的文档ID
                             .document(doc) // 将文档对象作为数据源
                     )))
@@ -76,7 +85,7 @@ public class ElasticsearchService {
     public void deleteByFileMd5(String fileMd5) {
         try {
             DeleteByQueryRequest request = DeleteByQueryRequest.of(d -> d
-                    .index("knowledge_base")
+                    .index(KnowledgeIndex.ALIAS)
                     .query(q -> q.term(t -> t.field("fileMd5").value(fileMd5)))
             );
             esClient.deleteByQuery(request);
@@ -88,7 +97,7 @@ public class ElasticsearchService {
     public long countByFileMd5(String fileMd5) {
         try {
             CountResponse response = esClient.count(c -> c
-                    .index("knowledge_base")
+                    .index(KnowledgeIndex.ALIAS)
                     .query(q -> q.term(t -> t.field("fileMd5").value(fileMd5)))
             );
             return response.count();

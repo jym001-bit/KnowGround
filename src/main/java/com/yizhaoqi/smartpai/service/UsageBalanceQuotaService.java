@@ -46,8 +46,8 @@ public class UsageBalanceQuotaService extends UsageQuotaService {
         // 检查用户余额是否充足
         if (!userTokenService.hasEnoughLlmTokens(userId, reserveTokens)) {
             Long balance = userTokenService.getLlmTokenBalance(userId);
-            throw new RateLimitExceededException(
-                    "LLM Token 余额不足，预估需要：" + reserveTokens + ", 当前余额：" + balance, 0);
+            throw new com.yizhaoqi.smartpai.exception.InsufficientBalanceException(
+                    "LLM Token 余额不足，预估需要：" + reserveTokens + ", 当前余额：" + balance);
         }
 
         // 同时预留当日额度；结算时再按实际用量扣除总余额。
@@ -65,8 +65,8 @@ public class UsageBalanceQuotaService extends UsageQuotaService {
         // 检查用户余额是否充足
         if (!userTokenService.hasEnoughEmbeddingTokens(userId, estimatedTokens)) {
             Long balance = userTokenService.getEmbeddingTokenBalance(userId);
-            throw new RateLimitExceededException(
-                    "Embedding Token 余额不足，预估需要：" + estimatedTokens + ", 当前余额：" + balance, 0);
+            throw new com.yizhaoqi.smartpai.exception.InsufficientBalanceException(
+                    "Embedding Token 余额不足，预估需要：" + estimatedTokens + ", 当前余额：" + balance);
         }
 
         TokenReservation dailyReservation = super.reserveEmbeddingTokens(userId, texts);

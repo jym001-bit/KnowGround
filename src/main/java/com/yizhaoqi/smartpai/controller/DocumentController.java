@@ -6,6 +6,7 @@ import com.yizhaoqi.smartpai.repository.FileUploadRepository;
 import com.yizhaoqi.smartpai.repository.OrganizationTagRepository;
 import com.yizhaoqi.smartpai.service.ChatHandler;
 import com.yizhaoqi.smartpai.service.DocumentService;
+import com.yizhaoqi.smartpai.service.VectorizationService;
 import com.yizhaoqi.smartpai.utils.LogUtils;
 import com.yizhaoqi.smartpai.utils.JwtUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -91,7 +92,10 @@ public class DocumentController {
             }
             
             // 执行删除操作
-            documentService.deleteDocument(fileMd5, userId);
+            try (com.yizhaoqi.smartpai.service.EmbeddingSwitchGate.Permit ignored =
+                         com.yizhaoqi.smartpai.service.DocumentMutationGate.read()) {
+                documentService.deleteDocument(fileMd5, userId);
+            }
             
             LogUtils.logFileOperation(userId, "DELETE", file.getFileName(), fileMd5, "SUCCESS");
             monitor.end("文档删除成功");
@@ -137,7 +141,11 @@ public class DocumentController {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
             }
 
-            var result = documentService.reindexDocument(fileMd5, userId);
+            VectorizationService.VectorizationUsageResult result;
+            try (com.yizhaoqi.smartpai.service.EmbeddingSwitchGate.Permit ignored =
+                         com.yizhaoqi.smartpai.service.DocumentMutationGate.read()) {
+                result = documentService.reindexDocument(fileMd5, userId);
+            }
             monitor.end("文档索引重建成功");
 
             Map<String, Object> data = new HashMap<>();

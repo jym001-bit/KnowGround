@@ -17,9 +17,12 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.FixedBackOff;
+import com.yizhaoqi.smartpai.service.TaskLeaseBusyException;
+import com.yizhaoqi.smartpai.exception.InsufficientBalanceException;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @Configuration
 public class KafkaConfig {
@@ -52,6 +55,8 @@ public class KafkaConfig {
     public String getFileProcessingTopic() {
         return fileProcessingTopic;
     }
+
+    public String getFileProcessingDltTopic() { return fileProcessingDltTopic; }
 
     public String getFileProcessingGroupId() {
         return fileProcessingGroupId;
@@ -87,13 +92,16 @@ public class KafkaConfig {
 
         DefaultKafkaProducerFactory<String, Object> factory = new DefaultKafkaProducerFactory<>(config);
         // 设置事务前缀，启用事务能力
-        factory.setTransactionIdPrefix("file-upload-tx-");
+        factory.setTransactionIdPrefix("file-upload-tx-" + UUID.randomUUID() + "-");
         return factory;
     }
 
     @Bean
     public KafkaTemplate<String, Object> kafkaTemplate() {
-        return new KafkaTemplate<>(producerFactory());
+        KafkaTemplate<String, Object> template = new KafkaTemplate<>(producerFactory());
+        // DefaultErrorHandler 的 DLT 发布发生在普通消费线程，不在生产者事务中。
+        template.setAllowNonTransactional(true);
+        return template;
     }
 
     @Bean
@@ -104,6 +112,7 @@ public class KafkaConfig {
         config.put(ConsumerConfig.GROUP_ID_CONFIG, fileProcessingGroupId);
         config.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         config.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
+        config.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
         config.put(JsonDeserializer.TRUSTED_PACKAGES, trustedPackages);
         return new DefaultKafkaConsumerFactory<>(config);
     }
@@ -120,6 +129,19 @@ public class KafkaConfig {
 
         // 固定退避策略：每 3 秒重试一次，最多重试 4 次（加首次共 5 次）
         DefaultErrorHandler errorHandler = new DefaultErrorHandler(recoverer, new FixedBackOff(3000L, 4));
+        errorHandler.setBackOffFunction((record, failure) -> {
+            Throwable cause = failure;
+            while (cause != null) {
+                if (cause instanceof InsufficientBalanceException) {
+                    return new FixedBackOff(0L, 0);
+                }
+                if (cause instanceof TaskLeaseBusyException) {
+                    return new FixedBackOff(15_000L, 10);
+                }
+                cause = cause.getCause();
+            }
+            return new FixedBackOff(3000L, 4);
+        });
 
         ConcurrentKafkaListenerContainerFactory<String, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);

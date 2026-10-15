@@ -130,7 +130,40 @@ class ModelProviderConfigServiceTest {
                 () -> service.updateScope(ModelProviderConfigService.SCOPE_EMBEDDING, request, "admin"));
 
         assertEquals(HttpStatus.CONFLICT, exception.getStatus());
-        assertTrue(exception.getMessage().contains("重嵌入"));
+        assertTrue(exception.getMessage().contains("版本索引重建"));
+    }
+
+    @Test
+    void shouldRejectEditingActiveEmbeddingModelWithoutRebuild() {
+        ModelProviderConfigService.UpdateScopeRequest request = new ModelProviderConfigService.UpdateScopeRequest(
+                "aliyun", List.of(new ModelProviderConfigService.ProviderUpsertRequest("aliyun",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1", "new-embedding-model", "", 1024, true)));
+        CustomException exception = assertThrows(CustomException.class,
+                () -> service.updateScope(ModelProviderConfigService.SCOPE_EMBEDDING, request, "admin"));
+        assertEquals(HttpStatus.CONFLICT, exception.getStatus());
+        assertEquals("text-embedding-v4", service.getActiveProvider(ModelProviderConfigService.SCOPE_EMBEDDING).model());
+    }
+
+    @Test
+    void rebuildingUsesEmbeddingScopedKeyEvenWhenProviderAlsoOffersLlm() {
+        service.updateScope(ModelProviderConfigService.SCOPE_LLM,
+                new ModelProviderConfigService.UpdateScopeRequest("deepseek", List.of(
+                        new ModelProviderConfigService.ProviderUpsertRequest("deepseek",
+                                "https://api.deepseek.com/v1", "deepseek-chat", "", null, true),
+                        new ModelProviderConfigService.ProviderUpsertRequest("zhipu",
+                                "https://open.bigmodel.cn/api/paas/v4", "glm-4.5-air", "llm-key", null, true))), "admin");
+        service.updateScope(ModelProviderConfigService.SCOPE_EMBEDDING,
+                new ModelProviderConfigService.UpdateScopeRequest("aliyun", List.of(
+                        new ModelProviderConfigService.ProviderUpsertRequest("aliyun",
+                                "https://dashscope.aliyuncs.com/compatible-mode/v1", "text-embedding-v4", "", 2048, true),
+                        new ModelProviderConfigService.ProviderUpsertRequest("zhipu",
+                                "https://open.bigmodel.cn/api/paas/v4", "embedding-3", "embedding-key", 2048, true))), "admin");
+
+        assertEquals("embedding-key", service.getEmbeddingProvider("zhipu").apiKey());
+        assertEquals("aliyun", service.getActiveProvider(ModelProviderConfigService.SCOPE_EMBEDDING).provider());
+
+        service.activateRebuiltEmbeddingProvider("zhipu", "embedding-3", 2048, "admin");
+        assertEquals("zhipu", service.getActiveProvider(ModelProviderConfigService.SCOPE_EMBEDDING).provider());
     }
 
     @Test

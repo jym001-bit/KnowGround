@@ -7,6 +7,7 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import com.yizhaoqi.smartpai.service.EmbeddingIndexMigrationService;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.indices.CreateIndexRequest;
 import co.elastic.clients.elasticsearch.indices.ExistsRequest;
@@ -36,6 +37,9 @@ public class EsIndexInitializer implements CommandLineRunner {
     @Autowired
     private ContextualRetrievalProperties contextualRetrievalProperties;
 
+    @Autowired
+    private EmbeddingIndexMigrationService migrationService;
+
     @Value("classpath:es-mappings/knowledge_base.json") // 加载 JSON 文件
     private org.springframework.core.io.Resource mappingResource;
 
@@ -57,6 +61,7 @@ public class EsIndexInitializer implements CommandLineRunner {
             logger.info("正在初始化索引 'knowledge_base'... endpoint={}://{}:{}, username={}",
                     scheme, host, port, maskUsername(username));
             initializeIndex();
+            migrationService.reconcileAfterStartup();
         } catch (Exception exception) {
             // 特别处理连接关闭异常，尝试重新连接
             if (exception instanceof ConnectionClosedException || (exception.getCause() != null && exception.getCause() instanceof ConnectionClosedException)) {
@@ -65,6 +70,7 @@ public class EsIndexInitializer implements CommandLineRunner {
                     Thread.sleep(5000); // 等待5秒后重试
                     // 重新尝试初始化索引
                     initializeIndex();
+                    migrationService.reconcileAfterStartup();
                 } catch (Exception retryException) {
                     String diagnostic = buildDiagnosticMessage(retryException);
                     logger.error("重试初始化索引失败。{}", diagnostic, retryException);
@@ -100,6 +106,13 @@ public class EsIndexInitializer implements CommandLineRunner {
                 }
                 logger.warn("补充 chunkContext 映射失败；上下文检索未开启: {}", e.getMessage());
             }
+        }
+        // Existing installations keep their physical index. Never reset an alias that already
+        // points to a rebuilt version: that would silently undo a successful cutover on restart.
+        if (!esClient.indices().existsAlias(e -> e.name(KnowledgeIndex.ALIAS)).value()) {
+            esClient.indices().updateAliases(u -> u.actions(a -> a.add(add -> add
+                    .index(KnowledgeIndex.LEGACY).alias(KnowledgeIndex.ALIAS))));
+            logger.info("已将知识库别名 {} 指向旧索引 {}", KnowledgeIndex.ALIAS, KnowledgeIndex.LEGACY);
         }
     }
 

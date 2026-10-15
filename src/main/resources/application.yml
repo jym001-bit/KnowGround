@@ -279,6 +279,24 @@ ai:
     max-tokens: ${AI_GENERATION_MAX_TOKENS:2000}
     top-p: ${AI_GENERATION_TOP_P:0.9}
 
+model-calls:
+  llm:
+    qps: ${MODEL_LLM_QPS:5}
+    timeout-millis: ${MODEL_LLM_TIMEOUT_MILLIS:90000}
+    minimum-calls: ${MODEL_LLM_BREAKER_MIN_CALLS:10}
+    failure-rate-percent: ${MODEL_LLM_BREAKER_FAILURE_RATE:50}
+    open-seconds: ${MODEL_LLM_BREAKER_OPEN_SECONDS:30}
+    max-retries: ${MODEL_LLM_MAX_RETRIES:2}
+    queue-capacity: ${MODEL_LLM_QUEUE_CAPACITY:100}
+  embedding:
+    qps: ${MODEL_EMBEDDING_QPS:10}
+    timeout-millis: ${MODEL_EMBEDDING_TIMEOUT_MILLIS:30000}
+    minimum-calls: ${MODEL_EMBEDDING_BREAKER_MIN_CALLS:10}
+    failure-rate-percent: ${MODEL_EMBEDDING_BREAKER_FAILURE_RATE:50}
+    open-seconds: ${MODEL_EMBEDDING_BREAKER_OPEN_SECONDS:30}
+    max-retries: ${MODEL_EMBEDDING_MAX_RETRIES:2}
+    queue-capacity: ${MODEL_EMBEDDING_QUEUE_CAPACITY:100}
+
 # 微信支付相关配置
 wx:
   pay:

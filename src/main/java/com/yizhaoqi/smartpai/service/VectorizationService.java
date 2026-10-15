@@ -12,7 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.UUID;
 import java.util.stream.IntStream;
 
 // 向量化服务类
@@ -49,6 +48,13 @@ public class VectorizationService {
     }
 
     public VectorizationUsageResult vectorizeWithUsage(String fileMd5, String userId, String orgTag, boolean isPublic, String requesterId) {
+        try (EmbeddingSwitchGate.Permit ignored = EmbeddingSwitchGate.read()) {
+            return vectorizeWithUsageLocked(fileMd5, userId, orgTag, isPublic, requesterId);
+        }
+    }
+
+    private VectorizationUsageResult vectorizeWithUsageLocked(String fileMd5, String userId, String orgTag,
+                                                               boolean isPublic, String requesterId) {
         try {
             logger.info("开始向量化文件，fileMd5: {}, userId: {}, orgTag: {}, isPublic: {}", 
                        fileMd5, userId, orgTag, isPublic);
@@ -85,7 +91,7 @@ public class VectorizationService {
             // 构建 Elasticsearch 文档并存储
             List<EsDocument> esDocuments = IntStream.range(0, chunks.size())
                     .mapToObj(i -> new EsDocument(
-                            UUID.randomUUID().toString(),
+                            fileMd5 + ":" + chunks.get(i).getChunkId(),
                             fileMd5,
                             chunks.get(i).getChunkId(),
                             chunks.get(i).getTextContent(),
@@ -100,6 +106,7 @@ public class VectorizationService {
                     ))
                     .toList();
 
+            FileTaskHeartbeat.pulse();
             elasticsearchService.bulkIndex(esDocuments); // 不是一条一条请求 Elasticsearch,批量存储到 Elasticsearch
 
             logger.info("向量化完成，fileMd5: {}", fileMd5);

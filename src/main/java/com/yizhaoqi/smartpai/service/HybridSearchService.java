@@ -6,6 +6,7 @@ import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.yizhaoqi.smartpai.client.EmbeddingClient;
+import com.yizhaoqi.smartpai.config.KnowledgeIndex;
 import com.yizhaoqi.smartpai.client.RerankClient;
 import com.yizhaoqi.smartpai.config.ContextualRetrievalProperties;
 import com.yizhaoqi.smartpai.config.HybridSearchProperties;
@@ -49,7 +50,7 @@ public class HybridSearchService {
     private static final String MODE_HYBRID_RRF = "HYBRID_RRF";
     private static final String MODE_TEXT_ONLY = "TEXT_ONLY";
     private static final int ES_MAX_NUM_CANDIDATES = 10000;
-    private static final String KNOWLEDGE_INDEX = "knowledge_base";
+    private static final String KNOWLEDGE_INDEX = KnowledgeIndex.ALIAS;
     private static final double TEXT_ONLY_MIN_SCORE = 0.3d;
     static final String FIELD_TEXT = "textContent";
     static final String FIELD_CHUNK_CONTEXT = "chunkContext";
@@ -88,6 +89,12 @@ public class HybridSearchService {
      * 带权限过滤的混合搜索（自己的文档、公开文档、所属组织及其上级组织的文档）
      */
     public List<SearchResult> searchWithPermission(String query, String userId, int topK) {
+        try (EmbeddingSwitchGate.Permit ignored = EmbeddingSwitchGate.read()) {
+            return searchWithPermissionLocked(query, userId, topK);
+        }
+    }
+
+    private List<SearchResult> searchWithPermissionLocked(String query, String userId, int topK) {
         logger.debug("开始带权限搜索，查询: {}, 用户ID: {}", query, userId);
         Query permissionFilter;
         String userDbId;
@@ -107,6 +114,7 @@ public class HybridSearchService {
             return retainAccessibleFiles(hybridSearch(query, userId, topK, permissionFilter), userDbId, userEffectiveTags);
         } catch (Exception e) {
             logger.error("带权限的混合搜索失败，降级为纯文本搜索", e);
+            if (!RequestDeadline.hasAtLeast(Duration.ofMillis(100))) return Collections.emptyList();
             return retainAccessibleFiles(safeTextOnlySearch(query, permissionFilter, topK, TEXT_ONLY_MIN_SCORE),
                     userDbId, userEffectiveTags);
         }
@@ -116,6 +124,12 @@ public class HybridSearchService {
      * 原始搜索方法，不包含权限过滤，保留向后兼容性
      */
     public List<SearchResult> search(String query, int topK) {
+        try (EmbeddingSwitchGate.Permit ignored = EmbeddingSwitchGate.read()) {
+            return searchLocked(query, topK);
+        }
+    }
+
+    private List<SearchResult> searchLocked(String query, int topK) {
         logger.warn("使用了没有权限过滤的搜索方法，建议使用 searchWithPermission 方法");
         try {
             return hybridSearch(query, "system", topK, withSuppressedFilesExcluded(null));
@@ -146,7 +160,13 @@ public class HybridSearchService {
                 CompletableFuture.supplyAsync(() -> recall(buildKnnRequest(queryVector, filter, window)), recallExecutor);
         // 等待时间取召回超时配置和问答请求剩余时间中较小的值
         Duration recallTimeout = RequestDeadline.cap(Duration.ofSeconds(properties.getRecallTimeoutSeconds()));
-        CompletableFuture.allOf(bm25Future, knnFuture).get(recallTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        try {
+            CompletableFuture.allOf(bm25Future, knnFuture).get(Math.max(1, recallTimeout.toMillis()), TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            bm25Future.cancel(true);
+            knnFuture.cancel(true);
+            throw e;
+        }
         List<Hit<EsDocument>> bm25Hits = bm25Future.join();
         List<Hit<EsDocument>> knnHits = knnFuture.join();
 

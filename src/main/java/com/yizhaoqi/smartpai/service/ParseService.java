@@ -319,7 +319,9 @@ public class ParseService {
             vector.setOrgTag(orgTag);
             vector.setPublic(isPublic);
             documentVectorRepository.save(vector);
+            if (currentChunkId % 8 == 0) FileTaskHeartbeat.pulse();
         }
+        FileTaskHeartbeat.pulse();
         logger.info("成功保存 {} 个子切片到数据库", chunks.size());
         return currentChunkId;
     }

@@ -2,8 +2,16 @@ package com.yizhaoqi.smartpai.consumer;
 
 import com.yizhaoqi.smartpai.config.KafkaConfig;
 import com.yizhaoqi.smartpai.model.FileProcessingTask;
+import com.yizhaoqi.smartpai.model.FileUpload;
+import com.yizhaoqi.smartpai.repository.DocumentVectorRepository;
+import com.yizhaoqi.smartpai.repository.FileUploadRepository;
 import com.yizhaoqi.smartpai.service.DocumentService;
+import com.yizhaoqi.smartpai.service.ElasticsearchService;
+import com.yizhaoqi.smartpai.service.FileTaskClaimService;
+import com.yizhaoqi.smartpai.service.FileTaskHeartbeat;
+import com.yizhaoqi.smartpai.service.StaleFileTaskException;
 import com.yizhaoqi.smartpai.service.ParseService;
+import com.yizhaoqi.smartpai.service.UploadService;
 import com.yizhaoqi.smartpai.service.VectorizationService;
 import com.yizhaoqi.smartpai.service.conflict.DocumentConflictService;
 import io.minio.errors.*;
@@ -26,6 +34,11 @@ public class FileProcessingConsumer {
     private final VectorizationService vectorizationService;
     private final DocumentService documentService;
     private final DocumentConflictService conflictService;
+    private final FileTaskClaimService claims;
+    private final FileUploadRepository files;
+    private final DocumentVectorRepository chunks;
+    private final ElasticsearchService elasticsearchService;
+    private final UploadService uploadService;
     @Autowired
     private KafkaConfig kafkaConfig;
 
@@ -34,19 +47,60 @@ public class FileProcessingConsumer {
             ParseService parseService,
             VectorizationService vectorizationService,
             DocumentService documentService,
-            DocumentConflictService conflictService
+            DocumentConflictService conflictService,
+            FileTaskClaimService claims,
+            FileUploadRepository files,
+            DocumentVectorRepository chunks,
+            ElasticsearchService elasticsearchService,
+            UploadService uploadService
     ) {
         this.parseService = parseService;
         this.vectorizationService = vectorizationService;
         this.documentService = documentService;
         this.conflictService = conflictService;
+        this.claims = claims;
+        this.files = files;
+        this.chunks = chunks;
+        this.elasticsearchService = elasticsearchService;
+        this.uploadService = uploadService;
     }
 
-    @KafkaListener(topics = "#{kafkaConfig.getFileProcessingTopic()}", groupId = "#{kafkaConfig.getFileProcessingGroupId()}")
+    @KafkaListener(id = "fileProcessing", topics = "#{kafkaConfig.getFileProcessingTopic()}", groupId = "#{kafkaConfig.getFileProcessingGroupId()}")
     public void processTask(FileProcessingTask task) {
+        String owner = claims.claim(task);
+        if (owner == null) {
+            log.info("重复文件任务已跳过: taskId={}, fileMd5={}", claims.taskId(task), task.getFileMd5());
+            return;
+        }
+        try (com.yizhaoqi.smartpai.service.EmbeddingSwitchGate.Permit ignored =
+                     com.yizhaoqi.smartpai.service.DocumentMutationGate.read();
+             FileTaskHeartbeat.Scope heartbeat = FileTaskHeartbeat.bind(() -> claims.heartbeat(task, owner))) {
+            FileTaskHeartbeat.pulse();
+            processTaskLocked(task);
+            FileTaskHeartbeat.pulse();
+            claims.finish(task, owner, true, null);
+        } catch (Exception e) {
+            claims.finish(task, owner, false, e);
+            if (isStale(e)) {
+                log.warn("旧消费线程已失去文件任务所有权，停止处理: taskId={}", claims.taskId(task));
+                return;
+            }
+            throw e;
+        }
+    }
+
+    private void processTaskLocked(FileProcessingTask task) {
         log.info("Received task: {}", task);
         log.info("文件权限信息: userId={}, orgTag={}, isPublic={}", 
                 task.getUserId(), task.getOrgTag(), task.isPublic());
+
+        if (!FileProcessingTask.TASK_TYPE_REINDEX.equals(task.getTaskType())
+                && files.findFirstByFileMd5AndUserIdOrderByCreatedAtDesc(task.getFileMd5(), task.getUserId())
+                .map(file -> FileUpload.VECTORIZATION_STATUS_COMPLETED.equals(file.getVectorizationStatus()))
+                .orElse(false)) {
+            log.info("文件已经向量化，跳过重复上传任务: fileMd5={}", task.getFileMd5());
+            return;
+        }
 
         documentService.markVectorizationProcessing(task.getFileMd5(), false);
 
@@ -58,7 +112,9 @@ public class FileProcessingConsumer {
         InputStream fileStream = null;
         try {
             // 下载文件
-            fileStream = downloadFileFromStorage(task.getFilePath());
+            fileStream = FileProcessingTask.TASK_TYPE_REINDEX.equals(task.getTaskType())
+                    ? downloadFileFromStorage(task.getFilePath())
+                    : uploadService.getMergedFileStream(task.getFileMd5());
             // 在 downloadFileFromStorage 返回后立即检查流是否可读
             if (fileStream == null) {
                 throw new IOException("流为空");
@@ -70,8 +126,12 @@ public class FileProcessingConsumer {
             }
 
             // 解析文件
+            // 失败后重新投递时先清掉上次留下的部分分块和向量。
+            chunks.deleteByFileMd5(task.getFileMd5());
+            elasticsearchService.deleteByFileMd5(task.getFileMd5());
             parseService.parseAndSave(task.getFileMd5(), fileStream, 
                     task.getUserId(), task.getOrgTag(), task.isPublic());
+            FileTaskHeartbeat.pulse();
             log.info("文件解析完成，fileMd5: {}", task.getFileMd5());
 
             // 向量化处理
@@ -82,11 +142,12 @@ public class FileProcessingConsumer {
                     task.isPublic(),
                     task.getUserId()
             );
+            FileTaskHeartbeat.pulse();
             documentService.markVectorizationCompleted(task.getFileMd5(), vectorizationResult);
             conflictService.submit(task.getFileMd5(), task.getUserId());
             log.info("向量化完成，fileMd5: {}", task.getFileMd5());
         } catch (Exception e) {
-            documentService.markVectorizationFailed(task.getFileMd5(), e);
+            if (!isStale(e)) documentService.markVectorizationFailed(task.getFileMd5(), e);
             log.error("Error processing task: {}", task, e);
             // 抛出异常让 Kafka 的 DefaultErrorHandler 捕获并触发重试 / 死信
             throw new RuntimeException("Error processing task", e);
@@ -110,10 +171,17 @@ public class FileProcessingConsumer {
             documentService.reindexDocument(task.getFileMd5(), requesterId);
             conflictService.submit(task.getFileMd5(), requesterId);
         } catch (Exception e) {
-            documentService.markVectorizationFailed(task.getFileMd5(), e);
+            if (!isStale(e)) documentService.markVectorizationFailed(task.getFileMd5(), e);
             log.error("Error reindexing task: {}", task, e);
             throw new RuntimeException("Error reindexing task", e);
         }
+    }
+
+    private boolean isStale(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof StaleFileTaskException) return true;
+        }
+        return false;
     }
 
     /**

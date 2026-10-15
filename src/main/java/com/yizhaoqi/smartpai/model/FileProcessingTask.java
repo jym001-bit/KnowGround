@@ -22,6 +22,12 @@ public class FileProcessingTask {
     private boolean isPublic; // 文件是否公开
     private String taskType; // 任务类型
     private String requesterId; // 发起重试的用户
+    private String taskId; // Outbox 事件 ID；旧 Kafka 消息可能为空
+
+    public FileProcessingTask(String fileMd5, String filePath, String fileName, String userId,
+                              String orgTag, boolean isPublic, String taskType, String requesterId) {
+        this(fileMd5, filePath, fileName, userId, orgTag, isPublic, taskType, requesterId, null);
+    }
     
     /**
      * 向后兼容的构造函数
@@ -35,5 +41,6 @@ public class FileProcessingTask {
         this.isPublic = false;
         this.taskType = TASK_TYPE_UPLOAD_PROCESS;
         this.requesterId = null;
+        this.taskId = null;
     }
 }

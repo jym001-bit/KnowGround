@@ -22,6 +22,7 @@ public class FileUpload {
     public static final int STATUS_UPLOADING = 0;
     public static final int STATUS_COMPLETED = 1;
     public static final int STATUS_MERGING = 2;
+    public static final int STATUS_ABANDONED = 3;
     public static final String VECTORIZATION_STATUS_PENDING = "PENDING";
     public static final String VECTORIZATION_STATUS_PROCESSING = "PROCESSING";
     public static final String VECTORIZATION_STATUS_COMPLETED = "COMPLETED";
@@ -104,6 +105,8 @@ public class FileUpload {
      */
     @CreationTimestamp
     private LocalDateTime createdAt;
+
+    private LocalDateTime lastChunkAt;
 
     /**
      * 文件合并完成的时间

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yizhaoqi.smartpai.entity.SearchResult;
 import com.yizhaoqi.smartpai.exception.RateLimitExceededException;
+import com.yizhaoqi.smartpai.utils.RequestDeadline;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -48,6 +49,7 @@ public class ChatHandler {
     private static final int MAX_MATCHED_CHUNK_LEN = 800;
     private static final int MAX_EVIDENCE_SNIPPET_LEN = 160;
     private static final int GENERATION_COMPLETION_TIMEOUT_SECONDS = 120;
+    private static final Duration FINAL_ANSWER_RESERVE = Duration.ofSeconds(30);
     private static final int MAX_REACT_ROUNDS = 4;
     private static final int MAX_REACT_TOOL_CALLS = 8;
     private static final int REACT_MAX_COMPLETION_TOKENS = 2000;
@@ -98,6 +100,7 @@ public class ChatHandler {
     }
 
     public void processMessage(String userId, String userMessage, WebSocketSession session) {
+        long requestDeadline = RequestDeadline.after(Duration.ofSeconds(GENERATION_COMPLETION_TIMEOUT_SECONDS));
         logger.info("开始处理消息，用户ID: {}, 会话ID: {}", userId, session.getId());
         String conversationId = null;
         String generationId = null;
@@ -129,7 +132,8 @@ public class ChatHandler {
             // 3. 异步执行 ReAct 决策循环：模型按需返回 tool_calls，避免在 WebSocket 处理线程上阻塞 90s+ 的工具流
             try {
                 chatMonitorExecutor.execute(() ->
-                        runReActLoopSafely(userId, userMessage, finalConversationId, finalGenerationId, history, responseFuture));
+                        runReActLoopSafely(userId, userMessage, finalConversationId, finalGenerationId,
+                                history, responseFuture, requestDeadline));
             } catch (RejectedExecutionException ex) {
                 logger.warn("聊天处理线程池已满，generationId: {}", finalGenerationId);
                 RuntimeException busyException = new RuntimeException("系统繁忙，请稍后重试");
@@ -156,9 +160,12 @@ public class ChatHandler {
                                     String conversationId,
                                     String generationId,
                                     List<Map<String, String>> history,
-                                    CompletableFuture<String> responseFuture) {
+                                    CompletableFuture<String> responseFuture,
+                                    long requestDeadline) {
         try {
-            runReActLoop(userId, userMessage, conversationId, generationId, history, responseFuture);
+            try (RequestDeadline.Scope ignored = RequestDeadline.open(requestDeadline)) {
+                runReActLoop(userId, userMessage, conversationId, generationId, history, responseFuture);
+            }
         } catch (RateLimitExceededException e) {
             logger.info("聊天额度限制: generationId={}, message={}", generationId, e.getMessage());
             chatGenerationStateService.markFailed(generationId, e.getMessage());
@@ -195,8 +202,15 @@ public class ChatHandler {
                 return;
             }
 
-            LlmProviderRouter.ReActTurn turn = streamReActTurnBlocking(
-                    userId, conversationId, generationId, messages, agentToolRegistry.getTools());
+            if (!RequestDeadline.hasAtLeast(FINAL_ANSWER_RESERVE.plusMillis(1))) break;
+            LlmProviderRouter.ReActTurn turn;
+            try (RequestDeadline.Scope work = openWorkBudget()) {
+                turn = streamReActTurnBlocking(
+                        userId, conversationId, generationId, messages, agentToolRegistry.getTools());
+            } catch (RuntimeException e) {
+                if (!RequestDeadline.hasAtLeast(FINAL_ANSWER_RESERVE.plusMillis(1))) break;
+                throw e;
+            }
             if (turn == null) {
                 // 上游 stream 被取消（如用户点 stop），保证内存映射被回收
                 cleanupGenerationState(generationId, null);
@@ -215,14 +229,20 @@ public class ChatHandler {
             messages.add(turn.assistantMessage());
             for (LlmProviderRouter.ToolCallDecision toolCall : turn.toolCalls()) {
                 ExecutedToolResult executedToolResult;
-                if (executedToolCalls >= MAX_REACT_TOOL_CALLS) {
+                if (!RequestDeadline.hasAtLeast(FINAL_ANSWER_RESERVE.plusMillis(1))) {
+                    executedToolResult = new ExecutedToolResult(
+                            "本轮时间预算不足，跳过工具；请基于已有资料直接回答。", false);
+                    sendToolCallStatus(userId, generationId, conversationId, toolCall, "failed");
+                } else if (executedToolCalls >= MAX_REACT_TOOL_CALLS) {
                     executedToolResult = new ExecutedToolResult(
                             "工具调用预算已用尽，本次工具未执行。请基于已有 tool 结果给出最终回答。",
                             false
                     );
                     sendToolCallStatus(userId, generationId, conversationId, toolCall, "failed");
                 } else {
-                    executedToolResult = executeToolForReAct(userId, userMessage, generationId, conversationId, toolCall);
+                    try (RequestDeadline.Scope work = openWorkBudget()) {
+                        executedToolResult = executeToolForReAct(userId, userMessage, generationId, conversationId, toolCall);
+                    }
                     executedToolCalls++;
                 }
                 messages.add(toolMessage(toolCall.id(), executedToolResult.content()));
@@ -239,11 +259,12 @@ public class ChatHandler {
                     return;
                 }
             }
+            if (!RequestDeadline.hasAtLeast(FINAL_ANSWER_RESERVE.plusMillis(1))) break;
         }
 
         messages.add(Map.of(
                 "role", "user",
-                "content", "ReAct 轮次预算已用尽，请不要再调用工具，直接基于已有 tool 结果给出最终回答。"
+                "content", "工具调用时间或轮次预算已用尽，请不要再调用工具，直接基于已有 tool 结果给出最终回答。"
         ));
         LlmProviderRouter.ReActTurn finalTurn = streamReActTurnBlocking(
                 userId, conversationId, generationId, messages, List.of());
@@ -345,6 +366,11 @@ public class ChatHandler {
     private record ExecutedToolResult(String content, boolean streamedToUser) {
     }
 
+    private RequestDeadline.Scope openWorkBudget() {
+        long deadline = RequestDeadline.currentNanos().orElseThrow();
+        return RequestDeadline.open(deadline - FINAL_ANSWER_RESERVE.toNanos());
+    }
+
     private Map<String, Object> toolMessage(String toolCallId, String content) {
         Map<String, Object> message = new HashMap<>();
         message.put("role", "tool");
@@ -370,7 +396,8 @@ public class ChatHandler {
         );
         activeStreams.put(generationId, streamHandle);
 
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(GENERATION_COMPLETION_TIMEOUT_SECONDS);
+        long deadline = System.nanoTime() + RequestDeadline.cap(
+                Duration.ofSeconds(GENERATION_COMPLETION_TIMEOUT_SECONDS)).toNanos();
         try {
             while (true) {
                 if (isGenerationCancelled(generationId)) {

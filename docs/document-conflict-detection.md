@@ -4,16 +4,18 @@
 
 例如 `服务端口: 8081` 与 `服务端口: 8082` 是候选；仅文字相似、没有同名键值的段落不会自动判为冲突。这是保守规则，不能找出所有自然语言矛盾。只比较同一用户、同一组织或双方都公开的文档，避免把互不可见的私有资料混在一起。重复扫描同一分块对只会留下一条记录。
 
-配置在 `application.yml` 的 `knowledge.conflict-detection`：检测默认开启；LLM 二次确认默认关闭。开启会消耗上传者的 LLM 额度，每次扫描至多请求 10 次；LLM 调用失败时仍交人工审核。
+配置在 `application.yml` 的 `knowledge.conflict-detection`：检测默认开启；LLM 二次确认默认关闭。管理员可在审核页面切换 LLM 二次确认，选择写入 MySQL 的 `conflict_detection_settings`，重启后仍生效；未设置时沿用环境变量默认值。每个文件开始冲突扫描时读取一次开关，因此只影响后续扫描，不重新审核历史记录。开启会消耗上传者的 LLM 额度，每次扫描至多请求 10 次；LLM 调用失败时仍交人工审核。LLM 仅筛选疑似冲突，最终保留或驳回仍由管理员决定。
 
 管理员用已有的 ADMIN JWT 调用：
 
 - `GET /api/v1/admin/document-conflicts?status=PENDING|REVIEWED`：列出待审核或已处理的记录（含双方文档名、MD5、分块号、相似度、键和值）。
 - `GET /api/v1/admin/document-conflicts/{id}/context`：读取双方命中分块及相邻分块的原文。
+- `GET /api/v1/admin/document-conflicts/settings`：读取冲突检测和 LLM 二次确认状态。
+- `PUT /api/v1/admin/document-conflicts/settings`，请求体 `{"llmConfirmationEnabled":true/false}`：切换 LLM 二次确认。
 - `POST /api/v1/admin/document-conflicts/{id}/decision`，请求体 `{"keepFileMd5":"要保留的文档MD5"}`：保留一篇，并停止另一篇参与检索。
 - 同一个 POST 接口发送 `{"dismiss":true}`：驳回误报，两篇继续可检索。
 - `POST /api/v1/admin/document-conflicts/{id}/undo`：撤销一次审核。若该文档没有被其他冲突决策停用，重新允许检索。
 
 这些接口返回前端通用的 `{code,message,data}` 响应。管理员可在前端“文档冲突审核”菜单（`/document-conflicts`）查看候选、展开原文、保留文档、驳回误报和撤销决定。停用标记保存在 `file_upload.search_suppressed`。BM25 和 KNN 查询都在 ES 中排除被停用的 MD5，结果返回前再用 MySQL 状态检查一次，因此不必删除原文或重新生成向量。多个冲突涉及同一文档时，应综合查看所有记录后再决定；也可以通过撤销接口修正误判。
 
-本地和当前生产配置的 `ddl-auto=update` 会添加新表与字段。若部署改用 `validate` 或关闭自动建表，先按 [`conflict_detection.sql`](databases/conflict_detection.sql) 迁移。上线前应在测试环境准备两份具有同名键、不同值且向量相近的文档，检查候选、管理员决定和检索排除；本地编译和单元测试不能替代这一集成验收。
+本地和当前生产配置的 `ddl-auto=update` 会添加新表与字段。若部署改用 `validate` 或关闭自动建表，首次部署按 [`conflict_detection.sql`](databases/conflict_detection.sql) 迁移；已安装冲突检测的实例只需执行新增的 [`conflict_confirmation_settings.sql`](databases/conflict_confirmation_settings.sql)。上线前应在测试环境准备两份具有同名键、不同值且向量相近的文档，检查候选、管理员决定和检索排除；本地编译和单元测试不能替代这一集成验收。

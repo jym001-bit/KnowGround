@@ -20,3 +20,10 @@ CREATE TABLE document_conflicts (
     created_at DATETIME NULL,
     CONSTRAINT uk_document_conflict_pair UNIQUE (pair_key)
 );
+
+CREATE TABLE conflict_detection_settings (
+    id BIGINT NOT NULL PRIMARY KEY,
+    llm_confirmation_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_by VARCHAR(64) NULL,
+    updated_at DATETIME NULL
+);

@@ -88,6 +88,12 @@ public class UploadService {
             if (fileUpload.getStatus() == FileUpload.STATUS_COMPLETED) {
                 throw new CustomException("文件已完成合并，不允许继续上传分片", HttpStatus.CONFLICT);
             }
+            if (fileUpload.getStatus() == FileUpload.STATUS_ABANDONED) {
+                throw new CustomException("废弃上传正在清理，请稍后重试", HttpStatus.CONFLICT);
+            }
+            if (fileUploadRepository.touchChunk(fileUpload.getId(), LocalDateTime.now()) != 1) {
+                throw new CustomException("上传状态已变化，请重试", HttpStatus.CONFLICT);
+            }
 
             String storagePath = buildChunkStoragePath(fileMd5, chunkIndex);
 
@@ -133,6 +139,10 @@ public class UploadService {
                         .build();
 
                 minioClient.putObject(putObjectArgs);
+                if (fileUploadRepository.touchChunk(fileUpload.getId(), LocalDateTime.now()) != 1) {
+                    minioClient.removeObject(RemoveObjectArgs.builder().bucket("uploads").object(storagePath).build());
+                    throw new CustomException("上传已被废弃清理任务接管，请重试", HttpStatus.CONFLICT);
+                }
                 logger.info("分片上传到MinIO成功 => fileMd5: {}, fileName: {}, fileType: {}, chunkIndex: {}", fileMd5, fileName, fileType, chunkIndex);
             } catch (Exception e) {
                 logger.error("分片上传到MinIO失败 => fileMd5: {}, fileName: {}, fileType: {}, chunkIndex: {}, 错误类型: {}, 错误信息: {}",
@@ -617,17 +627,7 @@ public class UploadService {
                 deleteFileMark(fileMd5, userId);
                 logger.info("分片状态记录已删除 => fileMd5: {}, fileName: {}, userId: {}", fileMd5, fileName, userId);
 
-                // 更新文件状态
-                logger.info("更新文件状态为已完成 => fileMd5: {}, fileName: {}, fileType: {}, userId: {}", fileMd5, fileName, fileType, userId);
-                FileUpload fileUpload = fileUploadRepository.findFirstByFileMd5AndUserIdOrderByCreatedAtDesc(fileMd5, userId)
-                        .orElseThrow(() -> {
-                            logger.error("更新文件状态失败，文件记录不存在 => fileMd5: {}, fileName: {}", fileMd5, fileName);
-                            return new RuntimeException("文件记录不存在: " + fileMd5);
-                        });
-                fileUpload.setStatus(FileUpload.STATUS_COMPLETED);
-                fileUpload.setMergedAt(LocalDateTime.now());
-                fileUploadRepository.save(fileUpload);
-                logger.info("文件状态已更新为已完成 => fileMd5: {}, fileName: {}, fileType: {}", fileMd5, fileName, fileType);
+                // 对象已合并；控制器随后用 Outbox 事务一并提交文件最终状态和处理任务。
 
                 // 生成预签名 URL（有效期为 1 小时）
                 logger.info("开始生成预签名URL => fileMd5: {}, fileName: {}, path: {}", fileMd5, fileName, mergedPath);
@@ -766,6 +766,7 @@ public class UploadService {
                 fileUpload.setPublic(isPublic);
                 fileUpload.setVectorizationStatus(null);
                 fileUpload.setVectorizationErrorMessage(null);
+                fileUpload.setLastChunkAt(LocalDateTime.now());
 
                 try {
                     return fileUploadRepository.save(fileUpload);

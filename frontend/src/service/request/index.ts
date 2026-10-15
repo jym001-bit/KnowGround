@@ -119,16 +119,9 @@ function getFlatRequest(options: Partial<RequestOption<App.Service.Response>> = 
 
         message = normalizeBackendMessage(message);
 
-        // 对需要登录的 403 做兜底处理；带业务文案的 403 继续向用户展示具体错误
-        if (error.response?.status === 403) {
-          const hasAuthorization = Boolean(getAuthorization());
-          const hasBackendMessage = Boolean(backendMessage);
-
-          if (hasAuthorization && !hasBackendMessage) {
-            const authStore = useAuthStore();
-            authStore.resetStore();
-            return;
-          }
+        // 403 只表示本次请求被拒绝；不能据此清除仍有效的登录态。
+        if (error.response?.status === 403 && !backendMessage) {
+          message = '没有权限执行此操作，请确认管理员身份或重新登录';
         }
 
         // the error message is displayed in the modal

@@ -5,6 +5,7 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yizhaoqi.smartpai.entity.EsDocument;
+import com.yizhaoqi.smartpai.config.KnowledgeIndex;
 import com.yizhaoqi.smartpai.model.DocumentConflict;
 import com.yizhaoqi.smartpai.model.FileUpload;
 import com.yizhaoqi.smartpai.repository.DocumentConflictRepository;
@@ -42,7 +43,7 @@ public class DocumentConflictService {
     private final ObjectMapper mapper;
     private final ThreadPoolTaskExecutor executor;
     private final boolean enabled;
-    private final boolean llmConfirmation;
+    private final ConflictDetectionSettingsService settingsService;
 
     public DocumentConflictService(ElasticsearchClient esClient,
                                    DocumentConflictRepository conflictRepository,
@@ -51,7 +52,7 @@ public class DocumentConflictService {
                                    ObjectMapper mapper,
                                    @Qualifier("conflictDetectionExecutor") ThreadPoolTaskExecutor executor,
                                    @Value("${knowledge.conflict-detection.enabled:true}") boolean enabled,
-                                   @Value("${knowledge.conflict-detection.llm-confirmation-enabled:false}") boolean llmConfirmation) {
+                                   ConflictDetectionSettingsService settingsService) {
         this.esClient = esClient;
         this.conflictRepository = conflictRepository;
         this.fileUploadRepository = fileUploadRepository;
@@ -59,7 +60,7 @@ public class DocumentConflictService {
         this.mapper = mapper;
         this.executor = executor;
         this.enabled = enabled;
-        this.llmConfirmation = llmConfirmation;
+        this.settingsService = settingsService;
     }
 
     /** Fire after indexing and status commit; detection failures never retry vectorization. */
@@ -81,11 +82,12 @@ public class DocumentConflictService {
     }
 
     public void detect(String fileMd5, String requesterId) throws Exception {
-        esClient.indices().refresh(r -> r.index("knowledge_base"));
+        boolean llmConfirmation = settingsService.getSettings().llmConfirmationEnabled();
+        esClient.indices().refresh(r -> r.index(KnowledgeIndex.ALIAS));
         int llmChecks = 0;
         for (int offset = 0; ; offset += MAX_CHUNKS) {
             final int from = offset;
-            SearchResponse<EsDocument> own = esClient.search(s -> s.index("knowledge_base")
+            SearchResponse<EsDocument> own = esClient.search(s -> s.index(KnowledgeIndex.ALIAS)
                     .query(q -> q.term(t -> t.field("fileMd5").value(fileMd5)))
                     .from(from).size(MAX_CHUNKS), EsDocument.class);
             if (own.hits().hits().isEmpty()) {
@@ -101,7 +103,7 @@ public class DocumentConflictService {
             for (float value : source.getVector()) {
                 vector.add(value);
             }
-            SearchResponse<EsDocument> neighbors = esClient.search(s -> s.index("knowledge_base")
+            SearchResponse<EsDocument> neighbors = esClient.search(s -> s.index(KnowledgeIndex.ALIAS)
                     .knn(k -> k.field("vector").queryVector(vector).k(KNN_WINDOW).numCandidates(100)
                             .filter(f -> f.bool(b -> {
                                 b.mustNot(n -> n.term(t -> t.field("fileMd5").value(fileMd5)));
