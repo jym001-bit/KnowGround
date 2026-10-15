@@ -23,7 +23,7 @@ public class UsageQuotaProperties {
     @Data
     public static class DailyGrant {
         private boolean enabled = false;
-        private long llmTokens = 800_000;
+        private long llmTokens = 300_000;
         private long embeddingTokens = 500_000;
         private long llmSkipAbove = 500_000;
         private long embeddingSkipAbove = 300_000;

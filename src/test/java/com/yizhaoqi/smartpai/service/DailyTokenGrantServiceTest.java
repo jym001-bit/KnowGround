@@ -32,7 +32,7 @@ class DailyTokenGrantServiceTest {
 
         new DailyTokenGrantService(properties, users, tokens).grantIfEligible("42");
 
-        verify(tokens).grantDailyTokens("42", LocalDate.now(), UserTokenRecord.TokenType.LLM, 800_000, 500_000);
+        verify(tokens).grantDailyTokens("42", LocalDate.now(), UserTokenRecord.TokenType.LLM, 300_000, 500_000);
         verify(tokens).grantDailyTokens("42", LocalDate.now(), UserTokenRecord.TokenType.EMBEDDING, 500_000, 300_000);
     }
 
