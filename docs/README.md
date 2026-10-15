@@ -25,5 +25,6 @@
 | Embedding 索引迁移状态 | [`embedding_index_migration.sql`](databases/embedding_index_migration.sql) | 缺少迁移状态表时；ES 别名另由服务管理 |
 | Outbox 与消费幂等 | [`file_processing_outbox.sql`](databases/file_processing_outbox.sql) | 关闭旧消费者后执行；先备份 `document_vectors`，脚本会删历史重复行并加唯一约束 |
 | 心跳恢复与废弃上传 | [`file_task_recovery.sql`](databases/file_task_recovery.sql) | Outbox 阶段之后、缺少心跳列时；先备份 `file_task_execution` 与 `file_upload` |
+| 文件任务 MD5 排序规则 | [`file_task_md5_collation.sql`](databases/file_task_md5_collation.sql) | 仅在 `file_upload.file_md5` 为 `utf8mb4_0900_ai_ci`、任务表列为 `utf8mb4_unicode_ci` 时；先备份相关任务表 |
 
 第 8～10 项模型容错、Redis Lua 限流和请求截止时间不新增 MySQL 表，但需要 Redis 可访问、模型配置正确。迁移后用数据库表结构、服务日志和实际上传/问答路径分别验收；仅看到表名或通过编译不足以证明链路可用。

@@ -25,3 +25,5 @@
 `AbandonedUploadCleanupService` 每 **1 小时**检查一次超过 **24 小时**没有新分片的未完成上传，每轮最多处理 50 条。清理前以状态条件更新抢占；同一 MD5 被多个文件记录引用时不删共享分片。删除对象存储分片、分块记录和 Redis bitmap 后保留文件记录，用户仍可重新上传。
 
 部署这一阶段前，如果没有开启 Hibernate 自动建表，先备份 `file_task_execution` 和 `file_upload` 并执行 [`databases/file_task_recovery.sql`](databases/file_task_recovery.sql)。升级后观察 `heartbeat_at`、`recovery_count`、Outbox 状态、死信表及新上传的消费耗时；旧任务被快速标记失败是预期行为，需要单独核查其原始文件。
+
+MySQL 8.0 的旧 `file_upload.file_md5` 可能是 `utf8mb4_0900_ai_ci`，而后来创建的任务表使用 `utf8mb4_unicode_ci`。启动时跨表比较 MD5 会报 `Illegal mix of collations`，导致应用退出。先核对 `information_schema.columns`，确有此差异时执行 [`databases/file_task_md5_collation.sql`](databases/file_task_md5_collation.sql)，使任务表的 MD5 列与 `file_upload` 一致；这些列为空时迁移不涉及已有任务数据。
